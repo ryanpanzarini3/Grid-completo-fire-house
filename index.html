@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <title>Fire House Grid Master</title>
+    <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/feather-icons"></script>
+    <style>
+        .grid-cell {
+            width: 40px;
+            height: 40px;
+            border: 1px solid #2d3748;
+            position: relative;
+        }
+        .grid-cell:hover {
+            background-color: rgba(239, 68, 68, 0.2);
+        }
+
+        /* single token rule (includes image handling) */
+        .token {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            position: absolute;
+            top: 2px;
+            left: 2px;
+            cursor: move;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 0.8rem;
+            user-select: none;
+            overflow: hidden;
+        }
+        .token.selected {
+            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.8);
+        }
+        .token img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+            border-radius: 50%;
+        }
+
+        .fire-overlay { background-color: rgba(239, 68, 68, 0.3); }
+        .smoke-overlay { background-color: rgba(156, 163, 175, 0.3); }
+        .ice-overlay { background-color: rgba(96, 165, 250, 0.3); }
+
+        .flame-bg {
+            background: linear-gradient(to bottom, #000000, #1a0000);
+            position: relative;
+            overflow: hidden;
+        }
+        .flame-bg::before {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: radial-gradient(ellipse at center, rgba(239, 68, 68, 0.1) 0%, rgba(0,0,0,0) 70%);
+            animation: flicker 3s infinite alternate;
+            z-index: -1;
+        }
+        @keyframes flicker {
+            0% { opacity: 0.5; }
+            100% { opacity: 0.8; }
+        }
+
+        /* grid size (15x15) */
+        .grid-cols-15 {
+            grid-template-columns: repeat(15, 40px);
+        }
+        .grid-rows-15 {
+            grid-template-rows: repeat(15, 40px);
+        }
+
+        body {
+           position: relative;
+           min-height: 100vh;
+           color: white;
+           background-color: #0b1220; /* fallback escuro por baixo da imagem */
+           overflow-x: hidden;
+     }
+    /* imagem full-screen semi-transparente atrás do conteúdo */
+    body::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background-image: url('/imagens/c398c7b4-3a28-4c4a-a825-0a14f752fe22.png');
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+        opacity: 0.18; /* ajuste aqui a transparência (0.05 - 0.35) */
+        z-index: -1;
+        pointer-events: none;
+        filter: saturate(0.95) contrast(0.9);
+    }
+
+        /* battle grid background (map) - image can be set inline by JS */
+        #battleGrid {
+            background-size: cover;
+            background-position: center;
+            background-color: rgba(30,30,30,0.6);
+            background-blend-mode: overlay;
+            border-radius: 12px;
+            box-shadow: 0 2px 16px rgba(0,0,0,0.3);
+            display: grid;
+        }
+        .logo-wrap { width: 64px; height: 64px; border-radius: 9999px; overflow: hidden; display: inline-block; }
+        .logo-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    </style>
+</head>
+<body class="text-white">
+    <div class="container mx-auto px-4 py-6">
+        <!-- Header -->
+        <header class="flex items-center justify-between mb-8">
+            <div class="flex items-center">
+                <div class="logo-wrap mr-4">
+                    <img src="/imagens/c398c7b4-3a28-4c4a-a825-0a14f752fe22.png" alt="Fire House">
+                </div>
+               <h1 class="text-3xl font-bold text-white">
+                    Fire House Grid Master
+                </h1>
+            </div>
+            <div class="flex space-x-4">
+                <button id="saveBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                    <i data-feather="save" class="mr-2"></i> Salvar
+                </button>
+                <button id="exportBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                    <i data-feather="download" class="mr-2"></i> Exportar
+                </button>
+                <button id="importBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                    <i data-feather="upload" class="mr-2"></i> Importar
+                </button>
+                <button id="clearBtn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center">
+                    <i data-feather="trash-2" class="mr-2"></i> Excluir
+                </button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="flex flex-col lg:flex-row gap-6">
+            <!-- Side Panel -->
+            <div class="w-full lg:w-64 bg-gray-900 rounded-lg p-4">
+                <h2 class="text-xl font-bold mb-4 text-red-400">Controls</h2>
+
+                <div class="grid grid-cols-2 gap-2 mb-6">
+                    <button id="addPlayerBtn" class="px-3 py-2 bg-blue-800 hover:bg-blue-700 rounded-lg flex items-center justify-center">
+                        <i data-feather="user-plus" class="mr-2"></i> Player
+                    </button>
+                    <button id="addEnemyBtn" class="px-3 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center justify-center">
+                        <i data-feather="skull" class="mr-2"></i> Criatura
+                    </button>
+                    <button id="markFireBtn" class="px-3 py-2 bg-orange-800 hover:bg-orange-700 rounded-lg flex items-center justify-center">
+                        <i data-feather="flame" class="mr-2"></i> Fogo
+                    </button>
+                    <button id="markSmokeBtn" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center">
+                        <i data-feather="cloud" class="mr-2"></i> Fumaça
+                    </button>
+                    <button id="markIceBtn" class="px-3 py-2 bg-blue-800 hover:bg-blue-700 rounded-lg flex items-center justify-center">
+                        <i data-feather="droplet" class="mr-2"></i> Cura
+                    </button>
+                    <button id="clearMarksBtn" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center">
+                        <i data-feather="x" class="mr-2"></i> Limpar Marcas
+                    </button>
+                </div>
+
+                <!-- Map controls (front-end upload / URL) -->
+                <div class="mt-4 p-3 bg-gray-800 rounded-lg">
+                    <h4 class="text-sm font-semibold mb-2 text-red-400">Mapa (fundo)</h4>
+                    <input id="mapUrlInput" type="text" placeholder="/imagens/mapa.png (ou URL pública)" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm mb-2">
+                    <input id="mapFileInput" type="file" accept="image/*" class="w-full text-sm text-gray-300 mb-2">
+                    <div class="flex items-center justify-between">
+                        <div class="flex items-center space-x-2">
+                            <button id="applyMapBtn" class="px-3 py-1 bg-red-700 rounded text-sm">Aplicar</button>
+                            <button id="clearMapBtn" class="px-3 py-1 bg-gray-700 rounded text-sm">Remover</button>
+                        </div>
+                        <div id="mapPreviewWrap" class="w-12 h-12 rounded overflow-hidden bg-gray-900 border border-gray-700">
+                            <img id="mapPreview" src="" alt="preview" style="width:100%;height:100%;object-fit:cover;display:none;">
+                        </div>
+                    </div>
+                </div>
+
+                <h3 class="text-lg font-semibold mb-2 mt-4 text-red-400">Tokens</h3>
+                <div id="tokenList" class="space-y-2 max-h-96 overflow-y-auto"></div>
+            </div>
+
+            <!-- Grid Area -->
+            <div class="flex-1">
+                <div id="battleGrid" class="grid grid-cols-15 gap-0 border-2 border-red-800 mx-auto w-max">
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="mt-8 bg-gray-900 rounded-lg p-4">
+            <div class="flex justify-between items-center">
+                <div id="selectedTokenInfo" class="text-lg">No token selected</div>
+                <div id="statusMessage" class="text-yellow-400 italic">Ready for battle!</div>
+                <div class="flex space-x-2" id="tokenControls">
+                    <button id="moveUpBtn" class="p-2 bg-gray-800 rounded-lg" disabled><i data-feather="arrow-up"></i></button>
+                    <button id="moveLeftBtn" class="p-2 bg-gray-800 rounded-lg" disabled><i data-feather="arrow-left"></i></button>
+                    <button id="moveRightBtn" class="p-2 bg-gray-800 rounded-lg" disabled><i data-feather="arrow-right"></i></button>
+                    <button id="moveDownBtn" class="p-2 bg-gray-800 rounded-lg" disabled><i data-feather="arrow-down"></i></button>
+                    <button id="deleteTokenBtn" class="p-2 bg-red-800 rounded-lg" disabled><i data-feather="trash-2"></i></button>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Token Edit Modal -->
+    <div id="tokenModal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center hidden z-50">
+        <div class="bg-gray-900 rounded-lg p-6 w-full max-w-md">
+            <h3 class="text-xl font-bold mb-4" id="modalTitle">Edit Token</h3>
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium mb-1">Name</label>
+                    <input type="text" id="tokenNameInput" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium mb-1">HP</label>
+                        <input type="number" id="tokenHpInput" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium mb-1">Max HP</label>
+                        <input type="number" id="tokenMaxHpInput" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Initiative</label>
+                    <input type="number" id="tokenInitiativeInput" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Color</label>
+                    <select id="tokenColorSelect" class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+                        <option value="bg-red-600">Red</option>
+                        <option value="bg-blue-600">Blue</option>
+                        <option value="bg-green-600">Green</option>
+                        <option value="bg-purple-600">Purple</option>
+                        <option value="bg-yellow-600">Yellow</option>
+                    </select>
+                </div>
+
+                <!-- Image fields: URL + file upload + preview -->
+                <div>
+                    <label class="block text-sm font-medium mb-1">Image URL</label>
+                    <input type="text" id="tokenImageUrlInput" placeholder="https://..." class="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium mb-1">Upload image</label>
+                    <input type="file" id="tokenImageFileInput" accept="image/*" class="w-full text-sm text-gray-300">
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="text-sm text-gray-400">Preview</div>
+                    <div id="tokenImagePreviewWrap" class="w-12 h-12 rounded-full overflow-hidden bg-gray-800">
+                        <img id="tokenImagePreview" src="" alt="preview" style="width:100%;height:100%;object-fit:cover;display:none;">
+                    </div>
+                </div>
+                <div class="flex justify-end space-x-3 pt-4">
+                    <button id="cancelTokenEditBtn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg">Cancel</button>
+                    <button id="saveTokenBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        feather.replace();
+
+        const state = {
+            gridSize: 15,
+            cells: [],
+            tokens: [],
+            selectedToken: null,
+            currentMarkType: null,
+            nextTokenId: 1
+        };
+
+        const gridElement = document.getElementById('battleGrid');
+        const tokenListElement = document.getElementById('tokenList');
+        const selectedTokenInfoElement = document.getElementById('selectedTokenInfo');
+        const statusMessageElement = document.getElementById('statusMessage');
+        const tokenModalElement = document.getElementById('tokenModal');
+        const tokenImageUrlInput = document.getElementById('tokenImageUrlInput');
+        const tokenImageFileInput = document.getElementById('tokenImageFileInput');
+        const tokenImagePreview = document.getElementById('tokenImagePreview');
+
+        const mapUrlInput = document.getElementById('mapUrlInput');
+        const mapFileInput = document.getElementById('mapFileInput');
+        const applyMapBtn = document.getElementById('applyMapBtn');
+        const clearMapBtn = document.getElementById('clearMapBtn');
+        const mapPreview = document.getElementById('mapPreview');
+
+        function initializeGrid() {
+            gridElement.innerHTML = '';
+            state.cells = [];
+            gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, 40px)`;
+
+            for (let y = 0; y < state.gridSize; y++) {
+                for (let x = 0; x < state.gridSize; x++) {
+                    const cell = document.createElement('div');
+                    cell.className = 'grid-cell';
+                    cell.dataset.x = x;
+                    cell.dataset.y = y;
+
+                    cell.addEventListener('click', handleCellClick);
+                    cell.addEventListener('dragover', handleDragOver);
+                    cell.addEventListener('drop', handleDrop);
+
+                    gridElement.appendChild(cell);
+                    state.cells.push({
+                        element: cell,
+                        x: x,
+                        y: y,
+                        marks: [],
+                        tokenId: null
+                    });
+                }
+            }
+        }
+
+        function handleCellClick(e) {
+            const cell = e.currentTarget;
+            const x = parseInt(cell.dataset.x);
+            const y = parseInt(cell.dataset.y);
+            const cellData = getCellData(x, y);
+
+            if (state.currentMarkType) {
+                const markIndex = cellData.marks.indexOf(state.currentMarkType);
+                if (markIndex >= 0) {
+                    cellData.marks.splice(markIndex, 1);
+                    cell.classList.remove(`${state.currentMarkType}-overlay`);
+                } else {
+                    cellData.marks.push(state.currentMarkType);
+                    cell.classList.add(`${state.currentMarkType}-overlay`);
+                }
+                saveState();
+            }
+        }
+
+        function handleDragOver(e) { e.preventDefault(); }
+
+        function handleDrop(e) {
+            e.preventDefault();
+            const cell = e.currentTarget;
+            const x = parseInt(cell.dataset.x);
+            const y = parseInt(cell.dataset.y);
+
+            const tokenId = e.dataTransfer.getData('text/plain');
+            const token = state.tokens.find(t => t.id === tokenId);
+
+            if (token && isPositionValid(x, y, token.size)) {
+                moveToken(token, x, y);
+            }
+        }
+
+        function isPositionValid(x, y, size = 1) {
+            if (x < 0 || y < 0 || x + size > state.gridSize || y + size > state.gridSize) return false;
+            for (let dy = 0; dy < size; dy++) {
+                for (let dx = 0; dx < size; dx++) {
+                    const cell = getCellData(x + dx, y + dy);
+                    if (!cell || cell.tokenId) return false;
+                }
+            }
+            return true;
+        }
+
+        function getCellData(x, y) {
+            return state.cells[y * state.gridSize + x];
+        }
+
+        function createToken(type, x, y) {
+            const tokenId = `token-${state.nextTokenId++}`;
+            const colors = { player: 'bg-blue-600', enemy: 'bg-red-600' };
+            const images = { player: '/imagens/player.png', enemy: '/imagens/enemy.png' };
+
+            const token = {
+                id: tokenId,
+                name: type === 'player' ? `Player ${state.tokens.filter(t => t.type === 'player').length + 1}` : `Enemy ${state.tokens.filter(t => t.type === 'enemy').length + 1}`,
+                type: type,
+                x: x,
+                y: y,
+                size: 1,
+                hp: type === 'player' ? 30 : 15,
+                maxHp: type === 'player' ? 30 : 15,
+                initiative: 0,
+                color: colors[type],
+                image: images[type]
+            };
+
+            state.tokens.push(token);
+
+            for (let dy = 0; dy < token.size; dy++) {
+                for (let dx = 0; dx < token.size; dx++) {
+                    const cell = getCellData(token.x + dx, token.y + dy);
+                    if (cell) cell.tokenId = token.id;
+                }
+            }
+
+            renderToken(token);
+            saveState();
+            return token;
+        }
+
+        function renderToken(token) {
+            const existingElement = document.getElementById(token.id);
+            if (existingElement) existingElement.remove();
+
+            const tokenElement = document.createElement('div');
+            tokenElement.id = token.id;
+            tokenElement.className = `token ${token.color} ${token.selected ? 'selected' : ''}`;
+            tokenElement.title = `${token.name}\nHP: ${token.hp}/${token.maxHp}`;
+
+            if (token.image) {
+                const img = document.createElement('img');
+                img.src = token.image;
+                img.alt = token.name;
+                tokenElement.appendChild(img);
+            } else {
+                tokenElement.textContent = token.name.charAt(0);
+            }
+
+            tokenElement.draggable = true;
+            tokenElement.addEventListener('dragstart', handleTokenDragStart);
+            tokenElement.addEventListener('click', () => selectToken(token));
+
+            const cell = getCellData(token.x, token.y);
+            if (cell && cell.element) {
+                cell.element.appendChild(tokenElement);
+            }
+
+            updateTokenList();
+        }
+
+        function handleTokenDragStart(e) {
+            e.dataTransfer.setData('text/plain', e.target.id);
+        }
+
+        function moveToken(token, newX, newY) {
+            for (let dy = 0; dy < token.size; dy++) {
+                for (let dx = 0; dx < token.size; dx++) {
+                    const oldCell = getCellData(token.x + dx, token.y + dy);
+                    if (oldCell) oldCell.tokenId = null;
+                }
+            }
+
+            token.x = newX;
+            token.y = newY;
+
+            for (let dy = 0; dy < token.size; dy++) {
+                for (let dx = 0; dx < token.size; dx++) {
+                    const newCell = getCellData(token.x + dx, token.y + dy);
+                    if (newCell) newCell.tokenId = token.id;
+                }
+            }
+
+            renderToken(token);
+            saveState();
+            showStatusMessage(`Moved ${token.name} to ${String.fromCharCode(65 + newX)}${newY + 1}`);
+        }
+
+        function selectToken(token) {
+            if (state.selectedToken) {
+                state.selectedToken.selected = false;
+                renderToken(state.selectedToken);
+            }
+
+            state.selectedToken = token;
+            token.selected = true;
+            renderToken(token);
+
+            selectedTokenInfoElement.textContent = `${token.name} (${token.hp}/${token.maxHp} HP)`;
+
+            document.getElementById('moveUpBtn').disabled = false;
+            document.getElementById('moveLeftBtn').disabled = false;
+            document.getElementById('moveRightBtn').disabled = false;
+            document.getElementById('moveDownBtn').disabled = false;
+            document.getElementById('deleteTokenBtn').disabled = false;
+        }
+
+        function updateTokenList() {
+            tokenListElement.innerHTML = '';
+
+            state.tokens.forEach(token => {
+                const tokenElement = document.createElement('div');
+                tokenElement.className = `flex items-center justify-between p-2 rounded-lg ${token.type === 'player' ? 'bg-blue-900' : 'bg-red-900'}`;
+
+                tokenElement.innerHTML = `
+                    <div class="flex items-center">
+                        <div class="w-6 h-6 rounded-full ${token.color} mr-2 flex items-center justify-center text-xs font-bold">${token.name.charAt(0)}</div>
+                        <span>${token.name}</span>
+                    </div>
+                    <div class="flex space-x-2">
+                        <button class="edit-token-btn p-1 rounded hover:bg-gray-700" data-id="${token.id}">
+                            <i data-feather="edit-2" class="w-4 h-4"></i>
+                        </button>
+                        <button class="delete-token-btn p-1 rounded hover:bg-gray-700" data-id="${token.id}">
+                            <i data-feather="trash-2" class="w-4 h-4"></i>
+                        </button>
+                    </div>
+                `;
+
+                tokenListElement.appendChild(tokenElement);
+
+                tokenElement.querySelector('.edit-token-btn').addEventListener('click', () => openTokenEditor(token));
+                tokenElement.querySelector('.delete-token-btn').addEventListener('click', () => deleteToken(token));
+            });
+
+            feather.replace();
+        }
+
+        function openTokenEditor(token) {
+            document.getElementById('tokenNameInput').value = token.name;
+            document.getElementById('tokenHpInput').value = token.hp;
+            document.getElementById('tokenMaxHpInput').value = token.maxHp;
+            document.getElementById('tokenInitiativeInput').value = token.initiative;
+
+            const colorSelect = document.getElementById('tokenColorSelect');
+            for (let i = 0; i < colorSelect.options.length; i++) {
+                if (colorSelect.options[i].value === token.color) {
+                    colorSelect.selectedIndex = i;
+                    break;
+                }
+            }
+
+            // populate image fields / preview
+            tokenImageUrlInput.value = token.image && !token.image.startsWith('data:') ? token.image : '';
+            if (token.image) {
+                tokenImagePreview.src = token.image;
+                tokenImagePreview.style.display = 'block';
+                if (token.image.startsWith('data:')) tokenImagePreview.dataset.dataurl = token.image;
+                else delete tokenImagePreview.dataset.dataurl;
+            } else {
+                tokenImagePreview.src = '';
+                tokenImagePreview.style.display = 'none';
+                delete tokenImagePreview.dataset.dataurl;
+            }
+            tokenImageFileInput.value = '';
+
+            tokenModalElement.dataset.editingTokenId = token.id;
+            tokenModalElement.classList.remove('hidden');
+        }
+
+        // token image handlers
+        tokenImageFileInput.addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const dataUrl = ev.target.result;
+                tokenImagePreview.src = dataUrl;
+                tokenImagePreview.style.display = 'block';
+                tokenImagePreview.dataset.dataurl = dataUrl;
+                tokenImageUrlInput.value = '';
+
+                const editingId = tokenModalElement.dataset.editingTokenId;
+                if (editingId) {
+                    const token = state.tokens.find(t => t.id === editingId);
+                    if (token) {
+                        token.image = dataUrl;
+                        renderToken(token);
+                        updateTokenList();
+                        saveState();
+                    }
+                }
+            };
+            reader.readAsDataURL(file);
+        });
+
+        tokenImageUrlInput.addEventListener('input', () => {
+            const url = tokenImageUrlInput.value.trim();
+            if (url) {
+                tokenImagePreview.src = url;
+                tokenImagePreview.style.display = 'block';
+                delete tokenImagePreview.dataset.dataurl;
+            } else {
+                tokenImagePreview.src = '';
+                tokenImagePreview.style.display = 'none';
+            }
+        });
+
+        function saveTokenChanges() {
+            const tokenId = tokenModalElement.dataset.editingTokenId;
+            const token = state.tokens.find(t => t.id === tokenId);
+
+            if (token) {
+                token.name = document.getElementById('tokenNameInput').value;
+                token.hp = parseInt(document.getElementById('tokenHpInput').value) || 0;
+                token.maxHp = parseInt(document.getElementById('tokenMaxHpInput').value) || 0;
+                token.initiative = parseInt(document.getElementById('tokenInitiativeInput').value) || 0;
+                token.color = document.getElementById('tokenColorSelect').value;
+
+                if (tokenImagePreview.dataset.dataurl) {
+                    token.image = tokenImagePreview.dataset.dataurl;
+                } else if (tokenImageUrlInput.value.trim()) {
+                    token.image = tokenImageUrlInput.value.trim();
+                }
+
+                renderToken(token);
+                updateTokenList();
+                saveState();
+
+                if (token.id === state.selectedToken?.id) {
+                    selectedTokenInfoElement.textContent = `${token.name} (${token.hp}/${token.maxHp} HP)`;
+                }
+            }
+
+            tokenModalElement.classList.add('hidden');
+        }
+
+        function deleteToken(token) {
+            if (!confirm(`Delete ${token.name}?`)) return;
+
+            for (let dy = 0; dy < token.size; dy++) {
+                for (let dx = 0; dx < token.size; dx++) {
+                    const cell = getCellData(token.x + dx, token.y + dy);
+                    if (cell) cell.tokenId = null;
+                }
+            }
+
+            state.tokens = state.tokens.filter(t => t.id !== token.id);
+
+            const tokenElement = document.getElementById(token.id);
+            if (tokenElement) tokenElement.remove();
+
+            if (state.selectedToken && state.selectedToken.id === token.id) {
+                state.selectedToken = null;
+                selectedTokenInfoElement.textContent = 'No token selected';
+                document.getElementById('moveUpBtn').disabled = true;
+                document.getElementById('moveLeftBtn').disabled = true;
+                document.getElementById('moveRightBtn').disabled = true;
+                document.getElementById('moveDownBtn').disabled = true;
+                document.getElementById('deleteTokenBtn').disabled = true;
+            }
+
+            updateTokenList();
+            saveState();
+            showStatusMessage(`Deleted ${token.name}`);
+        }
+
+        function showStatusMessage(message) {
+            statusMessageElement.textContent = message;
+            setTimeout(() => {
+                if (statusMessageElement.textContent === message) {
+                    statusMessageElement.textContent = 'Ready for battle!';
+                }
+            }, 3000);
+        }
+
+        function saveState() {
+            const saveData = {
+                tokens: state.tokens,
+                cells: state.cells.map(cell => ({ x: cell.x, y: cell.y, marks: [...cell.marks] })),
+                nextTokenId: state.nextTokenId
+            };
+            localStorage.setItem('infernalBattleGrid', JSON.stringify(saveData));
+        }
+
+        function loadState() {
+            const savedData = localStorage.getItem('infernalBattleGrid');
+            if (!savedData) return;
+
+            try {
+                const data = JSON.parse(savedData);
+
+                state.tokens = [];
+                state.nextTokenId = data.nextTokenId || state.nextTokenId;
+
+                data.cells.forEach(cellData => {
+                    const cell = getCellData(cellData.x, cellData.y);
+                    if (cell) {
+                        cell.marks = [...cellData.marks];
+                        cellData.marks.forEach(mark => cell.element.classList.add(`${mark}-overlay`));
+                    }
+                });
+
+                (data.tokens || []).forEach(tokenData => {
+                    const token = { ...tokenData, selected: false };
+                    state.tokens.push(token);
+
+                    for (let dy = 0; dy < token.size; dy++) {
+                        for (let dx = 0; dx < token.size; dx++) {
+                            const cell = getCellData(token.x + dx, token.y + dy);
+                            if (cell) cell.tokenId = token.id;
+                        }
+                    }
+
+                    renderToken(token);
+                });
+
+                showStatusMessage('Game loaded successfully');
+            } catch (e) {
+                console.error('Failed to load saved data:', e);
+                showStatusMessage('Failed to load saved game');
+            }
+        }
+
+        function exportState() {
+            const saveData = {
+                tokens: state.tokens,
+                cells: state.cells.map(cell => ({ x: cell.x, y: cell.y, marks: [...cell.marks] })),
+                nextTokenId: state.nextTokenId
+            };
+            const dataStr = JSON.stringify(saveData, null, 2);
+            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+            const linkElement = document.createElement('a');
+            linkElement.setAttribute('href', dataUri);
+            linkElement.setAttribute('download', 'infernal-battle-grid.json');
+            linkElement.click();
+            showStatusMessage('Game exported successfully');
+        }
+
+        function importState(file) {
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    clearGrid(false);
+                    state.tokens = [];
+                    state.nextTokenId = data.nextTokenId || 1;
+
+                    (data.cells || []).forEach(cellData => {
+                        const cell = getCellData(cellData.x, cellData.y);
+                        if (cell) {
+                            cell.marks = [...cellData.marks];
+                            cellData.marks.forEach(mark => cell.element.classList.add(`${mark}-overlay`));
+                        }
+                    });
+
+                    (data.tokens || []).forEach(tokenData => {
+                        const token = { ...tokenData, selected: false };
+                        state.tokens.push(token);
+                        for (let dy = 0; dy < token.size; dy++) {
+                            for (let dx = 0; dx < token.size; dx++) {
+                                const cell = getCellData(token.x + dx, token.y + dy);
+                                if (cell) cell.tokenId = token.id;
+                            }
+                        }
+                        renderToken(token);
+                    });
+
+                    showStatusMessage('Game imported successfully');
+                } catch (e) {
+                    console.error('Failed to import data:', e);
+                    showStatusMessage('Failed to import game - invalid file');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function clearGrid(confirmFirst = true) {
+            if (confirmFirst && !confirm('Clear the entire grid? This cannot be undone.')) return;
+
+            state.tokens = [];
+            state.selectedToken = null;
+            state.nextTokenId = 1;
+
+            state.cells.forEach(cell => {
+                cell.tokenId = null;
+                cell.marks = [];
+                cell.element.className = 'grid-cell';
+            });
+
+            selectedTokenInfoElement.textContent = 'No token selected';
+            updateTokenList();
+            showStatusMessage('Grid cleared');
+
+            if (!confirmFirst) saveState();
+        }
+
+        function findRandomEmptyPosition(size = 1) {
+            const emptyCells = state.cells.filter(cell => !cell.tokenId && isPositionValid(cell.x, cell.y, size));
+            if (emptyCells.length === 0) return null;
+            const randomCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+            return { x: randomCell.x, y: randomCell.y };
+        }
+
+        function setupEventListeners() {
+            document.getElementById('addPlayerBtn').addEventListener('click', () => {
+                const position = findRandomEmptyPosition();
+                if (position) {
+                    const token = createToken('player', position.x, position.y);
+                    selectToken(token);
+                    openTokenEditor(token);
+                } else showStatusMessage('No empty space for new token');
+            });
+
+            document.getElementById('addEnemyBtn').addEventListener('click', () => {
+                const position = findRandomEmptyPosition();
+                if (position) {
+                    const token = createToken('enemy', position.x, position.y);
+                    selectToken(token);
+                    openTokenEditor(token);
+                } else showStatusMessage('No empty space for new token');
+            });
+
+            document.getElementById('markFireBtn').addEventListener('click', () => { state.currentMarkType = state.currentMarkType === 'fire' ? null : 'fire'; updateMarkButtons(); });
+            document.getElementById('markSmokeBtn').addEventListener('click', () => { state.currentMarkType = state.currentMarkType === 'smoke' ? null : 'smoke'; updateMarkButtons(); });
+            document.getElementById('markIceBtn').addEventListener('click', () => { state.currentMarkType = state.currentMarkType === 'ice' ? null : 'ice'; updateMarkButtons(); });
+            document.getElementById('clearMarksBtn').addEventListener('click', () => {
+                state.currentMarkType = null;
+                updateMarkButtons();
+                state.cells.forEach(cell => { cell.marks = []; cell.element.classList.remove('fire-overlay','smoke-overlay','ice-overlay'); });
+                saveState();
+                showStatusMessage('Cleared all marks');
+            });
+
+            document.getElementById('saveBtn').addEventListener('click', () => { saveState(); showStatusMessage('Game saved'); });
+            document.getElementById('exportBtn').addEventListener('click', exportState);
+
+            document.getElementById('importBtn').addEventListener('click', () => {
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.json';
+                fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) importState(e.target.files[0]); });
+                fileInput.click();
+            });
+
+            document.getElementById('clearBtn').addEventListener('click', () => clearGrid());
+
+            document.getElementById('moveUpBtn').addEventListener('click', () => {
+                if (state.selectedToken && isPositionValid(state.selectedToken.x, state.selectedToken.y - 1, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x, state.selectedToken.y - 1);
+            });
+            document.getElementById('moveLeftBtn').addEventListener('click', () => {
+                if (state.selectedToken && isPositionValid(state.selectedToken.x - 1, state.selectedToken.y, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x - 1, state.selectedToken.y);
+            });
+            document.getElementById('moveRightBtn').addEventListener('click', () => {
+                if (state.selectedToken && isPositionValid(state.selectedToken.x + 1, state.selectedToken.y, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x + 1, state.selectedToken.y);
+            });
+            document.getElementById('moveDownBtn').addEventListener('click', () => {
+                if (state.selectedToken && isPositionValid(state.selectedToken.x, state.selectedToken.y + 1, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x, state.selectedToken.y + 1);
+            });
+
+            document.getElementById('deleteTokenBtn').addEventListener('click', () => { if (state.selectedToken) deleteToken(state.selectedToken); });
+
+            document.getElementById('cancelTokenEditBtn').addEventListener('click', () => tokenModalElement.classList.add('hidden'));
+            document.getElementById('saveTokenBtn').addEventListener('click', saveTokenChanges);
+
+            // Map handlers
+            mapUrlInput.addEventListener('input', () => {
+                const url = mapUrlInput.value.trim();
+                if (url) {
+                    mapPreview.src = url;
+                    mapPreview.style.display = 'block';
+                } else {
+                    mapPreview.src = '';
+                    mapPreview.style.display = 'none';
+                }
+            });
+
+            mapFileInput.addEventListener('change', (e) => {
+                const file = e.target.files && e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = function(ev) {
+                    const dataUrl = ev.target.result;
+                    mapUrlInput.value = '';
+                    applyMapBackground(dataUrl);
+                    saveMapToStorage(dataUrl);
+                    showStatusMessage('Mapa aplicado');
+                };
+                reader.readAsDataURL(file);
+            });
+
+            applyMapBtn.addEventListener('click', () => {
+                const url = mapUrlInput.value.trim();
+                if (!url) {
+                    showStatusMessage('Informe uma URL ou envie um arquivo');
+                    return;
+                }
+                applyMapBackground(url);
+                saveMapToStorage(url);
+                showStatusMessage('Mapa aplicado');
+            });
+
+            clearMapBtn.addEventListener('click', () => {
+                mapUrlInput.value = '';
+                mapFileInput.value = '';
+                applyMapBackground('');
+                saveMapToStorage(null);
+                showStatusMessage('Mapa removido');
+            });
+        }
+
+        function updateMarkButtons() {
+            const buttons = { fire: document.getElementById('markFireBtn'), smoke: document.getElementById('markSmokeBtn'), ice: document.getElementById('markIceBtn') };
+            Object.values(buttons).forEach(btn => btn.classList.remove('border-2','border-yellow-400'));
+            if (state.currentMarkType && buttons[state.currentMarkType]) buttons[state.currentMarkType].classList.add('border-2','border-yellow-400');
+        }
+
+        document.addEventListener('keydown', (e) => {
+            if (!state.selectedToken) return;
+            switch (e.key) {
+                case 'ArrowUp': document.getElementById('moveUpBtn').click(); e.preventDefault(); break;
+                case 'ArrowLeft': document.getElementById('moveLeftBtn').click(); e.preventDefault(); break;
+                case 'ArrowRight': document.getElementById('moveRightBtn').click(); e.preventDefault(); break;
+                case 'ArrowDown': document.getElementById('moveDownBtn').click(); e.preventDefault(); break;
+                case 'Delete': document.getElementById('deleteTokenBtn').click(); e.preventDefault(); break;
+            }
+        });
+
+        // Map helper functions
+        function applyMapBackground(value) {
+            if (value) {
+                gridElement.style.backgroundImage = `url("${value}")`;
+                gridElement.style.backgroundSize = 'cover';
+                gridElement.style.backgroundPosition = 'center';
+                mapPreview.src = value;
+                mapPreview.style.display = 'block';
+            } else {
+                gridElement.style.backgroundImage = '';
+                mapPreview.src = '';
+                mapPreview.style.display = 'none';
+            }
+        }
+
+        function saveMapToStorage(value) {
+            if (value) localStorage.setItem('infernalBattleGrid_map', value);
+            else localStorage.removeItem('infernalBattleGrid_map');
+        }
+
+        function loadMapFromStorage() {
+            const stored = localStorage.getItem('infernalBattleGrid_map');
+            if (stored) applyMapBackground(stored);
+        }
+
+        function init() {
+            initializeGrid();
+            setupEventListeners();
+            loadMapFromStorage();
+            loadState();
+
+            document.getElementById('moveUpBtn').disabled = true;
+            document.getElementById('moveLeftBtn').disabled = true;
+            document.getElementById('moveRightBtn').disabled = true;
+            document.getElementById('moveDownBtn').disabled = true;
+            document.getElementById('deleteTokenBtn').disabled = true;
+        }
+
+        init();
+    });
+    </script>
+</body>
+</html>
