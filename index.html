@@ -232,17 +232,17 @@
 
                 <!-- mobile actions toggle (visible on small screens) -->
                 <button id="actionsToggleBtn" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg lg:hidden mobile-actions-toggle" title="Ações">
-                    <i data-feather="more-vertical"></i>
-                </button>
+                     <i data-feather="more-vertical"></i>
+                 </button>
             </div>
         </header>
 
         <!-- mobile actions floating panel -->
-        <div id="mobileActionsPanel" class="mobile-actions-panel hidden">
-            <div class="flex flex-col gap-2">
-                <button id="m_saveBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
-                    <i data-feather="save" class="mr-2"></i> Salvar
-                </button>
+        <div id="mobileActionsPanel" class="mobile-actions-panel">
+             <div class="flex flex-col gap-2">
+                 <button id="m_saveBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                     <i data-feather="save" class="mr-2"></i> Salvar
+                 </button>
                 <button id="m_exportBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
                     <i data-feather="download" class="mr-2"></i> Exportar
                 </button>
@@ -381,463 +381,510 @@
         </div>
     </div>
 
-    <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        feather.replace();
+    // ...existing code...
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    feather.replace();
 
-        function getCssBaseCellSize() {
-            const v = getComputedStyle(document.documentElement).getPropertyValue('--cell-size') || '40px';
-            return parseInt(v, 10) || 40;
+    function getCssBaseCellSize() {
+        const v = getComputedStyle(document.documentElement).getPropertyValue('--cell-size') || '40px';
+        return parseInt(v, 10) || 40;
+    }
+
+    // compute an appropriate cell size so the whole grid fits its parent width on small screens
+    function computeCellSizeForContainer() {
+        const base = getCssBaseCellSize();
+        const wrapper = gridElement.parentElement; // flex-1
+        // When sidebar hidden on mobile, wrapper.clientWidth increases; use it
+        const availableWidth = Math.max(160, wrapper.clientWidth - 24); // leave small margin
+        const sizedByWidth = Math.floor(availableWidth / state.gridSize);
+        // keep within reasonable bounds (min 14, max base)
+        const finalSize = Math.max(14, Math.min(base, sizedByWidth || base));
+        // update CSS var so CSS-driven layout (grid-cell, token sizes) follow
+        document.documentElement.style.setProperty('--cell-size', `${finalSize}px`);
+        document.documentElement.style.setProperty('--token-size', `calc(var(--cell-size) - var(--token-gap))`);
+        return finalSize;
+    }
+
+    let CELL_SIZE = getCssBaseCellSize();
+
+    const state = {
+        gridSize: 15,
+        cells: [],
+        tokens: [],
+        selectedToken: null,
+        currentMarkType: null,
+        nextTokenId: 1
+    };
+
+    const gridElement = document.getElementById('battleGrid');
+    const tokenListElement = document.getElementById('tokenList');
+    const selectedTokenInfoElement = document.getElementById('selectedTokenInfo');
+    const statusMessageElement = document.getElementById('statusMessage');
+    const tokenModalElement = document.getElementById('tokenModal');
+    const tokenImageUrlInput = document.getElementById('tokenImageUrlInput');
+    const tokenImageFileInput = document.getElementById('tokenImageFileInput');
+    const tokenImagePreview = document.getElementById('tokenImagePreview');
+
+    const mapUrlInput = document.getElementById('mapUrlInput');
+    const mapFileInput = document.getElementById('mapFileInput');
+    const applyMapBtn = document.getElementById('applyMapBtn');
+    const clearMapBtn = document.getElementById('clearMapBtn');
+    const mapPreview = document.getElementById('mapPreview');
+
+    let dragging = null;
+    let zIndexCounter = 10;
+    let resizeTimer = null;
+
+    function initializeGrid() {
+        gridElement.innerHTML = '';
+        state.cells = [];
+
+        CELL_SIZE = computeCellSizeForContainer();
+        // set grid template using the computed CSS var (keeps CSS consistent)
+        gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, ${CELL_SIZE}px)`;
+        gridElement.style.width = `${state.gridSize * CELL_SIZE}px`;
+        gridElement.style.height = `${state.gridSize * CELL_SIZE}px`;
+
+        for (let y = 0; y < state.gridSize; y++) {
+            for (let x = 0; x < state.gridSize; x++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                cell.dataset.x = x;
+                cell.dataset.y = y;
+
+                cell.addEventListener('click', handleCellClick);
+                cell.addEventListener('dragover', handleDragOver);
+                cell.addEventListener('drop', handleDrop);
+
+                gridElement.appendChild(cell);
+                state.cells.push({
+                    element: cell,
+                    x: x,
+                    y: y,
+                    marks: [],
+                    tokenId: null
+                });
+            }
         }
+    }
 
-        // compute an appropriate cell size so the whole grid fits its parent width on small screens
-        function computeCellSizeForContainer() {
-            const base = getCssBaseCellSize();
-            const wrapper = gridElement.parentElement; // flex-1
-            // When sidebar hidden on mobile, wrapper.clientWidth increases; use it
-            const availableWidth = Math.max(160, wrapper.clientWidth - 24); // leave small margin
-            const sizedByWidth = Math.floor(availableWidth / state.gridSize);
-            // keep within reasonable bounds (min 18, max base)
-            const finalSize = Math.max(14, Math.min(base, sizedByWidth || base));
-            // update CSS var so CSS-driven layout (grid-cell, token sizes) follow
-            document.documentElement.style.setProperty('--cell-size', `${finalSize}px`);
-            document.documentElement.style.setProperty('--token-size', `calc(var(--cell-size) - var(--token-gap))`);
-            return finalSize;
-        }
-
-        let CELL_SIZE = getCssBaseCellSize();
-
-        const state = {
-            gridSize: 15,
-            cells: [],
-            tokens: [],
-            selectedToken: null,
-            currentMarkType: null,
-            nextTokenId: 1
-        };
-
-        const gridElement = document.getElementById('battleGrid');
-        const tokenListElement = document.getElementById('tokenList');
-        const selectedTokenInfoElement = document.getElementById('selectedTokenInfo');
-        const statusMessageElement = document.getElementById('statusMessage');
-        const tokenModalElement = document.getElementById('tokenModal');
-        const tokenImageUrlInput = document.getElementById('tokenImageUrlInput');
-        const tokenImageFileInput = document.getElementById('tokenImageFileInput');
-        const tokenImagePreview = document.getElementById('tokenImagePreview');
-
-        const mapUrlInput = document.getElementById('mapUrlInput');
-        const mapFileInput = document.getElementById('mapFileInput');
-        const applyMapBtn = document.getElementById('applyMapBtn');
-        const clearMapBtn = document.getElementById('clearMapBtn');
-        const mapPreview = document.getElementById('mapPreview');
-
-        let dragging = null;
-        let zIndexCounter = 10;
-        let resizeTimer = null;
-
-        function initializeGrid() {
-            gridElement.innerHTML = '';
-            state.cells = [];
-
+    function adjustForResize() {
+        // debounce resize to avoid layout thrash on mobile
+        if (resizeTimer) clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
             CELL_SIZE = computeCellSizeForContainer();
-            // set grid template using the computed CSS var (keeps CSS consistent)
             gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, ${CELL_SIZE}px)`;
             gridElement.style.width = `${state.gridSize * CELL_SIZE}px`;
             gridElement.style.height = `${state.gridSize * CELL_SIZE}px`;
 
-            for (let y = 0; y < state.gridSize; y++) {
-                for (let x = 0; x < state.gridSize; x++) {
-                    const cell = document.createElement('div');
-                    cell.className = 'grid-cell';
-                    cell.dataset.x = x;
-                    cell.dataset.y = y;
-
-                    cell.addEventListener('click', handleCellClick);
-                    cell.addEventListener('dragover', handleDragOver);
-                    cell.addEventListener('drop', handleDrop);
-
-                    gridElement.appendChild(cell);
-                    state.cells.push({
-                        element: cell,
-                        x: x,
-                        y: y,
-                        marks: [],
-                        tokenId: null
-                    });
-                }
-            }
-        }
-
-        function adjustForResize() {
-            // debounce resize to avoid layout thrash on mobile
-            if (resizeTimer) clearTimeout(resizeTimer);
-            resizeTimer = setTimeout(() => {
-                CELL_SIZE = computeCellSizeForContainer();
-                gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, ${CELL_SIZE}px)`;
-                gridElement.style.width = `${state.gridSize * CELL_SIZE}px`;
-                gridElement.style.height = `${state.gridSize * CELL_SIZE}px`;
-
-                // reposition tokens based on token.x/token.y (use grid coords)
-                state.tokens.forEach(token => {
-                    if (!token.pos) token.pos = { x: (token.x || 0) * CELL_SIZE, y: (token.y || 0) * CELL_SIZE };
-                    token.pos.x = (token.x !== undefined ? token.x : Math.round((token.pos?.x||0)/CELL_SIZE)) * CELL_SIZE;
-                    token.pos.y = (token.y !== undefined ? token.y : Math.round((token.pos?.y||0)/CELL_SIZE)) * CELL_SIZE;
-                    const el = document.getElementById(token.id);
-                    if (el) {
-                        el.style.width = `${CELL_SIZE - 4}px`;
-                        el.style.height = `${CELL_SIZE - 4}px`;
-                        el.style.left = `${token.pos.x}px`;
-                        el.style.top = `${token.pos.y}px`;
-                    }
-                });
-            }, 80);
-        }
-
-        window.addEventListener('resize', () => adjustForResize());
-
-        function handleCellClick(e) {
-            const cell = e.currentTarget;
-            const x = parseInt(cell.dataset.x);
-            const y = parseInt(cell.dataset.y);
-            const cellData = getCellData(x, y);
-
-            if (state.currentMarkType) {
-                const markIndex = cellData.marks.indexOf(state.currentMarkType);
-                if (markIndex >= 0) {
-                    cellData.marks.splice(markIndex, 1);
-                    cell.classList.remove(`${state.currentMarkType}-overlay`);
-                } else {
-                    cellData.marks.push(state.currentMarkType);
-                    cell.classList.add(`${state.currentMarkType}-overlay`);
-                }
-                saveState();
-            }
-        }
-
-        function handleDragOver(e) { e.preventDefault(); }
-        function handleDrop(e) { e.preventDefault(); }
-
-        function isPositionValid(x, y, size = 1) {
-            if (x < 0 || y < 0 || x + size > state.gridSize || y + size > state.gridSize) return false;
-            return true;
-        }
-
-        function getCellData(x, y) {
-            return state.cells[y * state.gridSize + x];
-        }
-
-        function createToken(type, x, y) {
-            const tokenId = `token-${state.nextTokenId++}`;
-            const colors = { player: 'bg-blue-600', enemy: 'bg-red-600' };
-            const images = { player: '/imagens/player.png', enemy: '/imagens/enemy.png' };
-
-            const token = {
-                id: tokenId,
-                name: type === 'player' ? `Player ${state.tokens.filter(t => t.type === 'player').length + 1}` : `Enemy ${state.tokens.filter(t => t.type === 'enemy').length + 1}`,
-                type: type,
-                x: x,
-                y: y,
-                pos: { x: x * CELL_SIZE, y: y * CELL_SIZE },
-                size: 1,
-                hp: type === 'player' ? 30 : 15,
-                maxHp: type === 'player' ? 30 : 15,
-                initiative: 0,
-                color: colors[type],
-                image: images[type]
-            };
-
-            state.tokens.push(token);
-            renderToken(token);
-            saveState();
-            return token;
-        }
-
-        function renderToken(token) {
-            const existingElement = document.getElementById(token.id);
-            if (existingElement) existingElement.remove();
-
-            const tokenElement = document.createElement('div');
-            tokenElement.id = token.id;
-            tokenElement.className = `token ${token.color} ${token.selected ? 'selected' : ''}`;
-            if (token.type === 'player') tokenElement.classList.add('token-border-player');
-            else if (token.type === 'enemy') tokenElement.classList.add('token-border-enemy');
-            tokenElement.title = `${token.name}\nHP: ${token.hp}/${token.maxHp}`;
-
-            if (token.image) {
-                const img = document.createElement('img');
-                img.src = token.image;
-                img.alt = token.name;
-                tokenElement.appendChild(img);
-            } else {
-                tokenElement.textContent = token.name.charAt(0);
-            }
-
-            CELL_SIZE = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || CELL_SIZE;
-            tokenElement.style.position = 'absolute';
-            tokenElement.style.width = `${CELL_SIZE - 4}px`;
-            tokenElement.style.height = `${CELL_SIZE - 4}px`;
-
-            if (!token.pos) token.pos = { x: token.x * CELL_SIZE, y: token.y * CELL_SIZE };
-            tokenElement.style.left = `${token.pos.x}px`;
-            tokenElement.style.top = `${token.pos.y}px`;
-            tokenElement.style.zIndex = ++zIndexCounter;
-
-            tokenElement.addEventListener('pointerdown', (ev) => {
-                ev.preventDefault();
-                dragging = {
-                    token,
-                    el: tokenElement,
-                    startX: ev.clientX,
-                    startY: ev.clientY,
-                    origLeft: parseFloat(tokenElement.style.left || 0),
-                    origTop: parseFloat(tokenElement.style.top || 0),
-                    pointerId: ev.pointerId
-                };
-                try { tokenElement.setPointerCapture(ev.pointerId); } catch (e) {}
-                tokenElement.style.zIndex = ++zIndexCounter;
-            });
-
-            tokenElement.addEventListener('click', (ev) => { ev.stopPropagation(); selectToken(token); });
-
-            gridElement.appendChild(tokenElement);
-            updateTokenList();
-        }
-
-        // global pointer handlers for dragging
-        document.addEventListener('pointermove', (ev) => {
-            if (!dragging) return;
-            const dx = ev.clientX - dragging.startX;
-            const dy = ev.clientY - dragging.startY;
-            let nx = dragging.origLeft + dx;
-            let ny = dragging.origTop + dy;
-            const maxX = gridElement.clientWidth - (CELL_SIZE - 4);
-            const maxY = gridElement.clientHeight - (CELL_SIZE - 4);
-            nx = Math.max(0, Math.min(nx, maxX));
-            ny = Math.max(0, Math.min(ny, maxY));
-            dragging.el.style.left = `${nx}px`;
-            dragging.el.style.top = `${ny}px`;
-        });
-
-        document.addEventListener('pointerup', (ev) => {
-            if (!dragging) return;
-            try { dragging.el.releasePointerCapture && dragging.el.releasePointerCapture(dragging.pointerId); } catch (e) {}
-            const left = parseFloat(dragging.el.style.left || 0);
-            const top = parseFloat(dragging.el.style.top || 0);
-            dragging.token.pos = { x: left, y: top };
-            dragging.token.x = Math.round(left / CELL_SIZE);
-            dragging.token.y = Math.round(top / CELL_SIZE);
-            saveState();
-            dragging = null;
-        });
-
-        function moveToken(token, newX, newY) {
-            token.x = newX;
-            token.y = newY;
-            token.pos = { x: token.x * CELL_SIZE, y: token.y * CELL_SIZE };
-            renderToken(token);
-            saveState();
-            showStatusMessage(`Moved ${token.name} to ${String.fromCharCode(65 + newX)}${newY + 1}`);
-        }
-
-        function selectToken(token) {
-            if (state.selectedToken) {
-                state.selectedToken.selected = false;
-                renderToken(state.selectedToken);
-            }
-
-            state.selectedToken = token;
-            token.selected = true;
-            renderToken(token);
-
-            selectedTokenInfoElement.textContent = `${token.name} (${token.hp}/${token.maxHp} HP)`;
-
-            document.getElementById('moveUpBtn').disabled = false;
-            document.getElementById('moveLeftBtn').disabled = false;
-            document.getElementById('moveRightBtn').disabled = false;
-            document.getElementById('moveDownBtn').disabled = false;
-            document.getElementById('deleteTokenBtn').disabled = false;
-        }
-
-        function updateTokenList() {
-            tokenListElement.innerHTML = '';
-
+            // reposition tokens based on token.x/token.y (use grid coords)
             state.tokens.forEach(token => {
-                const tokenElement = document.createElement('div');
-                tokenElement.className = `flex items-center justify-between p-2 rounded-lg ${token.type === 'player' ? 'bg-blue-900' : 'bg-red-900'}`;
-
-                tokenElement.innerHTML = `
-                    <div class="flex items-center">
-                        <div class="w-6 h-6 rounded-full ${token.color} mr-2 flex items-center justify-center text-xs font-bold">${token.name.charAt(0)}</div>
-                        <span>${token.name}</span>
-                    </div>
-                    <div class="flex space-x-2">
-                        <button class="edit-token-btn p-1 rounded hover:bg-gray-700" data-id="${token.id}">
-                            <i data-feather="edit-2" class="w-4 h-4"></i>
-                        </button>
-                        <button class="delete-token-btn p-1 rounded hover:bg-gray-700" data-id="${token.id}">
-                            <i data-feather="trash-2" class="w-4 h-4"></i>
-                        </button>
-                    </div>
-                `;
-
-                tokenListElement.appendChild(tokenElement);
-
-                tokenElement.querySelector('.edit-token-btn').addEventListener('click', () => openTokenEditor(token));
-                tokenElement.querySelector('.delete-token-btn').addEventListener('click', () => deleteToken(token));
+                if (!token.pos) token.pos = { x: (token.x || 0) * CELL_SIZE, y: (token.y || 0) * CELL_SIZE };
+                token.pos.x = (token.x !== undefined ? token.x : Math.round((token.pos?.x||0)/CELL_SIZE)) * CELL_SIZE;
+                token.pos.y = (token.y !== undefined ? token.y : Math.round((token.pos?.y||0)/CELL_SIZE)) * CELL_SIZE;
+                const el = document.getElementById(token.id);
+                if (el) {
+                    el.style.width = `${CELL_SIZE - 4}px`;
+                    el.style.height = `${CELL_SIZE - 4}px`;
+                    el.style.left = `${token.pos.x}px`;
+                    el.style.top = `${token.pos.y}px`;
+                }
             });
+        }, 80);
+    }
 
-            feather.replace();
-        }
+    window.addEventListener('resize', () => adjustForResize());
 
-        function openTokenEditor(token) {
-            document.getElementById('tokenNameInput').value = token.name;
-            document.getElementById('tokenHpInput').value = token.hp;
-            document.getElementById('tokenMaxHpInput').value = token.maxHp;
-            document.getElementById('tokenInitiativeInput').value = token.initiative;
+    function handleCellClick(e) {
+        const cell = e.currentTarget;
+        const x = parseInt(cell.dataset.x);
+        const y = parseInt(cell.dataset.y);
+        const cellData = getCellData(x, y);
 
-            const colorSelect = document.getElementById('tokenColorSelect');
-            for (let i = 0; i < colorSelect.options.length; i++) {
-                if (colorSelect.options[i].value === token.color) {
-                    colorSelect.selectedIndex = i;
-                    break;
-                }
-            }
-
-            tokenImageUrlInput.value = token.image && !token.image.startsWith('data:') ? token.image : '';
-            if (token.image) {
-                tokenImagePreview.src = token.image;
-                tokenImagePreview.style.display = 'block';
-                if (token.image.startsWith('data:')) tokenImagePreview.dataset.dataurl = token.image;
-                else delete tokenImagePreview.dataset.dataurl;
+        if (state.currentMarkType) {
+            const markIndex = cellData.marks.indexOf(state.currentMarkType);
+            if (markIndex >= 0) {
+                cellData.marks.splice(markIndex, 1);
+                cell.classList.remove(`${state.currentMarkType}-overlay`);
             } else {
-                tokenImagePreview.src = '';
-                tokenImagePreview.style.display = 'none';
-                delete tokenImagePreview.dataset.dataurl;
+                cellData.marks.push(state.currentMarkType);
+                cell.classList.add(`${state.currentMarkType}-overlay`);
             }
-            tokenImageFileInput.value = '';
+            saveState();
+        }
+    }
 
-            tokenModalElement.dataset.editingTokenId = token.id;
-            tokenModalElement.classList.remove('hidden');
+    function handleDragOver(e) { e.preventDefault(); }
+    function handleDrop(e) { e.preventDefault(); }
+
+    function isPositionValid(x, y, size = 1) {
+        if (x < 0 || y < 0 || x + size > state.gridSize || y + size > state.gridSize) return false;
+        return true;
+    }
+
+    function getCellData(x, y) {
+        return state.cells[y * state.gridSize + x];
+    }
+
+    function createToken(type, x, y) {
+        const tokenId = `token-${state.nextTokenId++}`;
+        const colors = { player: 'bg-blue-600', enemy: 'bg-red-600' };
+        const images = { player: '/imagens/player.png', enemy: '/imagens/enemy.png' };
+
+        const token = {
+            id: tokenId,
+            name: type === 'player' ? `Player ${state.tokens.filter(t => t.type === 'player').length + 1}` : `Enemy ${state.tokens.filter(t => t.type === 'enemy').length + 1}`,
+            type: type,
+            x: x,
+            y: y,
+            pos: { x: x * CELL_SIZE, y: y * CELL_SIZE },
+            size: 1,
+            hp: type === 'player' ? 30 : 15,
+            maxHp: type === 'player' ? 30 : 15,
+            initiative: 0,
+            color: colors[type],
+            image: images[type]
+        };
+
+        state.tokens.push(token);
+        renderToken(token);
+        saveState();
+        return token;
+    }
+
+    function renderToken(token) {
+        const existingElement = document.getElementById(token.id);
+        if (existingElement) existingElement.remove();
+
+        const tokenElement = document.createElement('div');
+        tokenElement.id = token.id;
+        tokenElement.className = `token ${token.color} ${token.selected ? 'selected' : ''}`;
+        if (token.type === 'player') tokenElement.classList.add('token-border-player');
+        else if (token.type === 'enemy') tokenElement.classList.add('token-border-enemy');
+        tokenElement.title = `${token.name}\nHP: ${token.hp}/${token.maxHp}`;
+
+        if (token.image) {
+            const img = document.createElement('img');
+            img.src = token.image;
+            img.alt = token.name;
+            tokenElement.appendChild(img);
+        } else {
+            tokenElement.textContent = token.name.charAt(0);
         }
 
-        tokenImageFileInput.addEventListener('change', (e) => {
-            const file = e.target.files && e.target.files[0];
-            if (!file) return;
-            const reader = new FileReader();
-            reader.onload = function(ev) {
-                const dataUrl = ev.target.result;
-                tokenImagePreview.src = dataUrl;
-                tokenImagePreview.style.display = 'block';
-                tokenImagePreview.dataset.dataurl = dataUrl;
-                tokenImageUrlInput.value = '';
+        CELL_SIZE = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || CELL_SIZE;
+        tokenElement.style.position = 'absolute';
+        tokenElement.style.width = `${CELL_SIZE - 4}px`;
+        tokenElement.style.height = `${CELL_SIZE - 4}px`;
 
-                const editingId = tokenModalElement.dataset.editingTokenId;
-                if (editingId) {
-                    const token = state.tokens.find(t => t.id === editingId);
-                    if (token) {
-                        token.image = dataUrl;
-                        renderToken(token);
-                        updateTokenList();
-                        saveState();
-                    }
-                }
+        if (!token.pos) token.pos = { x: token.x * CELL_SIZE, y: token.y * CELL_SIZE };
+        tokenElement.style.left = `${token.pos.x}px`;
+        tokenElement.style.top = `${token.pos.y}px`;
+        tokenElement.style.zIndex = ++zIndexCounter;
+
+        tokenElement.addEventListener('pointerdown', (ev) => {
+            ev.preventDefault();
+            dragging = {
+                token,
+                el: tokenElement,
+                startX: ev.clientX,
+                startY: ev.clientY,
+                origLeft: parseFloat(tokenElement.style.left || 0),
+                origTop: parseFloat(tokenElement.style.top || 0),
+                pointerId: ev.pointerId
             };
-            reader.readAsDataURL(file);
+            try { tokenElement.setPointerCapture(ev.pointerId); } catch (e) {}
+            tokenElement.style.zIndex = ++zIndexCounter;
         });
 
-        tokenImageUrlInput.addEventListener('input', () => {
-            const url = tokenImageUrlInput.value.trim();
-            if (url) {
-                tokenImagePreview.src = url;
-                tokenImagePreview.style.display = 'block';
-                delete tokenImagePreview.dataset.dataurl;
-            } else {
-                tokenImagePreview.src = '';
-                tokenImagePreview.style.display = 'none';
-            }
-        });
+        tokenElement.addEventListener('click', (ev) => { ev.stopPropagation(); selectToken(token); });
 
-        function saveTokenChanges() {
-            const tokenId = tokenModalElement.dataset.editingTokenId;
-            const token = state.tokens.find(t => t.id === tokenId);
+        gridElement.appendChild(tokenElement);
+        updateTokenList();
+    }
 
-            if (token) {
-                token.name = document.getElementById('tokenNameInput').value;
-                token.hp = parseInt(document.getElementById('tokenHpInput').value) || 0;
-                token.maxHp = parseInt(document.getElementById('tokenMaxHpInput').value) || 0;
-                token.initiative = parseInt(document.getElementById('tokenInitiativeInput').value) || 0;
-                token.color = document.getElementById('tokenColorSelect').value;
+    // global pointer handlers for dragging
+    document.addEventListener('pointermove', (ev) => {
+        if (!dragging) return;
+        const dx = ev.clientX - dragging.startX;
+        const dy = ev.clientY - dragging.startY;
+        let nx = dragging.origLeft + dx;
+        let ny = dragging.origTop + dy;
+        const maxX = gridElement.clientWidth - (CELL_SIZE - 4);
+        const maxY = gridElement.clientHeight - (CELL_SIZE - 4);
+        nx = Math.max(0, Math.min(nx, maxX));
+        ny = Math.max(0, Math.min(ny, maxY));
+        dragging.el.style.left = `${nx}px`;
+        dragging.el.style.top = `${ny}px`;
+    });
 
-                if (tokenImagePreview.dataset.dataurl) {
-                    token.image = tokenImagePreview.dataset.dataurl;
-                } else if (tokenImageUrlInput.value.trim()) {
-                    token.image = tokenImageUrlInput.value.trim();
-                }
+    document.addEventListener('pointerup', (ev) => {
+        if (!dragging) return;
+        try { dragging.el.releasePointerCapture && dragging.el.releasePointerCapture(dragging.pointerId); } catch (e) {}
+        const left = parseFloat(dragging.el.style.left || 0);
+        const top = parseFloat(dragging.el.style.top || 0);
+        dragging.token.pos = { x: left, y: top };
+        dragging.token.x = Math.round(left / CELL_SIZE);
+        dragging.token.y = Math.round(top / CELL_SIZE);
+        saveState();
+        dragging = null;
+    });
 
-                renderToken(token);
-                updateTokenList();
-                saveState();
+    function moveToken(token, newX, newY) {
+        token.x = newX;
+        token.y = newY;
+        token.pos = { x: token.x * CELL_SIZE, y: token.y * CELL_SIZE };
+        renderToken(token);
+        saveState();
+        showStatusMessage(`Moved ${token.name} to ${String.fromCharCode(65 + newX)}${newY + 1}`);
+    }
 
-                if (token.id === state.selectedToken?.id) {
-                    selectedTokenInfoElement.textContent = `${token.name} (${token.hp}/${token.maxHp} HP)`;
-                }
-            }
-
-            tokenModalElement.classList.add('hidden');
+    function selectToken(token) {
+        if (state.selectedToken) {
+            state.selectedToken.selected = false;
+            renderToken(state.selectedToken);
         }
 
-        function deleteToken(token) {
-            if (!confirm(`Delete ${token.name}?`)) return;
+        state.selectedToken = token;
+        token.selected = true;
+        renderToken(token);
 
-            state.tokens = state.tokens.filter(t => t.id !== token.id);
+        selectedTokenInfoElement.textContent = `${token.name} (${token.hp}/${token.maxHp} HP)`;
 
-            const tokenElement = document.getElementById(token.id);
-            if (tokenElement) tokenElement.remove();
+        document.getElementById('moveUpBtn').disabled = false;
+        document.getElementById('moveLeftBtn').disabled = false;
+        document.getElementById('moveRightBtn').disabled = false;
+        document.getElementById('moveDownBtn').disabled = false;
+        document.getElementById('deleteTokenBtn').disabled = false;
+    }
 
-            if (state.selectedToken && state.selectedToken.id === token.id) {
-                state.selectedToken = null;
-                selectedTokenInfoElement.textContent = 'No token selected';
-                document.getElementById('moveUpBtn').disabled = true;
-                document.getElementById('moveLeftBtn').disabled = true;
-                document.getElementById('moveRightBtn').disabled = true;
-                document.getElementById('moveDownBtn').disabled = true;
-                document.getElementById('deleteTokenBtn').disabled = true;
+    function updateTokenList() {
+        tokenListElement.innerHTML = '';
+
+        state.tokens.forEach(token => {
+            const tokenElement = document.createElement('div');
+            tokenElement.className = `flex items-center justify-between p-2 rounded-lg ${token.type === 'player' ? 'bg-blue-900' : 'bg-red-900'}`;
+
+            tokenElement.innerHTML = `
+                <div class="flex items-center">
+                    <div class="w-6 h-6 rounded-full ${token.color} mr-2 flex items-center justify-center text-xs font-bold">${token.name.charAt(0)}</div>
+                    <span>${token.name}</span>
+                </div>
+                <div class="flex space-x-2">
+                    <button class="edit-token-btn p-1 rounded hover:bg-gray-700" data-id="${token.id}">
+                        <i data-feather="edit-2" class="w-4 h-4"></i>
+                    </button>
+                    <button class="delete-token-btn p-1 rounded hover:bg-gray-700" data-id="${token.id}">
+                        <i data-feather="trash-2" class="w-4 h-4"></i>
+                    </button>
+                </div>
+            `;
+
+            tokenListElement.appendChild(tokenElement);
+
+            tokenElement.querySelector('.edit-token-btn').addEventListener('click', () => openTokenEditor(token));
+            tokenElement.querySelector('.delete-token-btn').addEventListener('click', () => deleteToken(token));
+        });
+
+        feather.replace();
+    }
+
+    function openTokenEditor(token) {
+        document.getElementById('tokenNameInput').value = token.name;
+        document.getElementById('tokenHpInput').value = token.hp;
+        document.getElementById('tokenMaxHpInput').value = token.maxHp;
+        document.getElementById('tokenInitiativeInput').value = token.initiative;
+
+        const colorSelect = document.getElementById('tokenColorSelect');
+        for (let i = 0; i < colorSelect.options.length; i++) {
+            if (colorSelect.options[i].value === token.color) {
+                colorSelect.selectedIndex = i;
+                break;
+            }
+        }
+
+        tokenImageUrlInput.value = token.image && !token.image.startsWith('data:') ? token.image : '';
+        if (token.image) {
+            tokenImagePreview.src = token.image;
+            tokenImagePreview.style.display = 'block';
+            if (token.image.startsWith('data:')) tokenImagePreview.dataset.dataurl = token.image;
+            else delete tokenImagePreview.dataset.dataurl;
+        } else {
+            tokenImagePreview.src = '';
+            tokenImagePreview.style.display = 'none';
+            delete tokenImagePreview.dataset.dataurl;
+        }
+        tokenImageFileInput.value = '';
+
+        tokenModalElement.dataset.editingTokenId = token.id;
+        tokenModalElement.classList.remove('hidden');
+    }
+
+    tokenImageFileInput.addEventListener('change', (e) => {
+        const file = e.target.files && e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(ev) {
+            const dataUrl = ev.target.result;
+            tokenImagePreview.src = dataUrl;
+            tokenImagePreview.style.display = 'block';
+            tokenImagePreview.dataset.dataurl = dataUrl;
+            tokenImageUrlInput.value = '';
+
+            const editingId = tokenModalElement.dataset.editingTokenId;
+            if (editingId) {
+                const token = state.tokens.find(t => t.id === editingId);
+                if (token) {
+                    token.image = dataUrl;
+                    renderToken(token);
+                    updateTokenList();
+                    saveState();
+                }
+            }
+        };
+        reader.readAsDataURL(file);
+    });
+
+    tokenImageUrlInput.addEventListener('input', () => {
+        const url = tokenImageUrlInput.value.trim();
+        if (url) {
+            tokenImagePreview.src = url;
+            tokenImagePreview.style.display = 'block';
+            delete tokenImagePreview.dataset.dataurl;
+        } else {
+            tokenImagePreview.src = '';
+            tokenImagePreview.style.display = 'none';
+        }
+    });
+
+    function saveTokenChanges() {
+        const tokenId = tokenModalElement.dataset.editingTokenId;
+        const token = state.tokens.find(t => t.id === tokenId);
+
+        if (token) {
+            token.name = document.getElementById('tokenNameInput').value;
+            token.hp = parseInt(document.getElementById('tokenHpInput').value) || 0;
+            token.maxHp = parseInt(document.getElementById('tokenMaxHpInput').value) || 0;
+            token.initiative = parseInt(document.getElementById('tokenInitiativeInput').value) || 0;
+            token.color = document.getElementById('tokenColorSelect').value;
+
+            if (tokenImagePreview.dataset.dataurl) {
+                token.image = tokenImagePreview.dataset.dataurl;
+            } else if (tokenImageUrlInput.value.trim()) {
+                token.image = tokenImageUrlInput.value.trim();
             }
 
+            renderToken(token);
             updateTokenList();
             saveState();
-            showStatusMessage(`Deleted ${token.name}`);
+
+            if (token.id === state.selectedToken?.id) {
+                selectedTokenInfoElement.textContent = `${token.name} (${token.hp}/${token.maxHp} HP)`;
+            }
         }
 
-        function showStatusMessage(message) {
-            statusMessageElement.textContent = message;
-            setTimeout(() => {
-                if (statusMessageElement.textContent === message) {
-                    statusMessageElement.textContent = 'Ready for battle!';
+        tokenModalElement.classList.add('hidden');
+    }
+
+    function deleteToken(token) {
+        if (!confirm(`Delete ${token.name}?`)) return;
+
+        state.tokens = state.tokens.filter(t => t.id !== token.id);
+
+        const tokenElement = document.getElementById(token.id);
+        if (tokenElement) tokenElement.remove();
+
+        if (state.selectedToken && state.selectedToken.id === token.id) {
+            state.selectedToken = null;
+            selectedTokenInfoElement.textContent = 'No token selected';
+            document.getElementById('moveUpBtn').disabled = true;
+            document.getElementById('moveLeftBtn').disabled = true;
+            document.getElementById('moveRightBtn').disabled = true;
+            document.getElementById('moveDownBtn').disabled = true;
+            document.getElementById('deleteTokenBtn').disabled = true;
+        }
+
+        updateTokenList();
+        saveState();
+        showStatusMessage(`Deleted ${token.name}`);
+    }
+
+    function showStatusMessage(message) {
+        statusMessageElement.textContent = message;
+        setTimeout(() => {
+            if (statusMessageElement.textContent === message) {
+                statusMessageElement.textContent = 'Ready for battle!';
+            }
+        }, 3000);
+    }
+
+    function saveState() {
+        const saveData = {
+            tokens: state.tokens,
+            cells: state.cells.map(cell => ({ x: cell.x, y: cell.y, marks: [...cell.marks] })),
+            nextTokenId: state.nextTokenId
+        };
+        localStorage.setItem('infernalBattleGrid', JSON.stringify(saveData));
+    }
+
+    function loadState() {
+        const savedData = localStorage.getItem('infernalBattleGrid');
+        if (!savedData) return;
+
+        try {
+            const data = JSON.parse(savedData);
+
+            state.tokens = [];
+            state.nextTokenId = data.nextTokenId || state.nextTokenId;
+
+            data.cells.forEach(cellData => {
+                const cell = getCellData(cellData.x, cellData.y);
+                if (cell) {
+                    cell.marks = [...cellData.marks];
+                    cellData.marks.forEach(mark => cell.element.classList.add(`${mark}-overlay`));
                 }
-            }, 3000);
+            });
+
+            (data.tokens || []).forEach(tokenData => {
+                if (!tokenData.pos) tokenData.pos = { x: (tokenData.x || 0) * CELL_SIZE, y: (tokenData.y || 0) * CELL_SIZE };
+                const token = { ...tokenData, selected: false };
+                state.tokens.push(token);
+                renderToken(token);
+            });
+
+            showStatusMessage('Game loaded successfully');
+        } catch (e) {
+            console.error('Failed to load saved data:', e);
+            showStatusMessage('Failed to load saved game');
         }
+    }
 
-        function saveState() {
-            const saveData = {
-                tokens: state.tokens,
-                cells: state.cells.map(cell => ({ x: cell.x, y: cell.y, marks: [...cell.marks] })),
-                nextTokenId: state.nextTokenId
-            };
-            localStorage.setItem('infernalBattleGrid', JSON.stringify(saveData));
-        }
+    function exportState() {
+        const saveData = {
+            tokens: state.tokens,
+            cells: state.cells.map(cell => ({ x: cell.x, y: cell.y, marks: [...cell.marks] })),
+            nextTokenId: state.nextTokenId
+        };
+        const dataStr = JSON.stringify(saveData, null, 2);
+        const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+        const linkElement = document.createElement('a');
+        linkElement.setAttribute('href', dataUri);
+        linkElement.setAttribute('download', 'infernal-battle-grid.json');
+        linkElement.click();
+        showStatusMessage('Game exported successfully');
+    }
 
-        function loadState() {
-            const savedData = localStorage.getItem('infernalBattleGrid');
-            if (!savedData) return;
-
+    function importState(file) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
             try {
-                const data = JSON.parse(savedData);
-
+                const data = JSON.parse(e.target.result);
+                clearGrid(false);
                 state.tokens = [];
-                state.nextTokenId = data.nextTokenId || state.nextTokenId;
+                state.nextTokenId = data.nextTokenId || 1;
 
-                data.cells.forEach(cellData => {
+                (data.cells || []).forEach(cellData => {
                     const cell = getCellData(cellData.x, cellData.y);
                     if (cell) {
                         cell.marks = [...cellData.marks];
@@ -852,293 +899,256 @@
                     renderToken(token);
                 });
 
-                showStatusMessage('Game loaded successfully');
+                showStatusMessage('Game imported successfully');
             } catch (e) {
-                console.error('Failed to load saved data:', e);
-                showStatusMessage('Failed to load saved game');
+                console.error('Failed to import data:', e);
+                showStatusMessage('Failed to import game - invalid file');
             }
-        }
+        };
+        reader.readAsText(file);
+    }
 
-        function exportState() {
-            const saveData = {
-                tokens: state.tokens,
-                cells: state.cells.map(cell => ({ x: cell.x, y: cell.y, marks: [...cell.marks] })),
-                nextTokenId: state.nextTokenId
-            };
-            const dataStr = JSON.stringify(saveData, null, 2);
-            const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
-            const linkElement = document.createElement('a');
-            linkElement.setAttribute('href', dataUri);
-            linkElement.setAttribute('download', 'infernal-battle-grid.json');
-            linkElement.click();
-            showStatusMessage('Game exported successfully');
-        }
+    function clearGrid(confirmFirst = true) {
+        if (confirmFirst && !confirm('Clear the entire grid? This cannot be undone.')) return;
 
-        function importState(file) {
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                try {
-                    const data = JSON.parse(e.target.result);
-                    clearGrid(false);
-                    state.tokens = [];
-                    state.nextTokenId = data.nextTokenId || 1;
+        state.tokens = [];
+        state.selectedToken = null;
+        state.nextTokenId = 1;
 
-                    (data.cells || []).forEach(cellData => {
-                        const cell = getCellData(cellData.x, cellData.y);
-                        if (cell) {
-                            cell.marks = [...cellData.marks];
-                            cellData.marks.forEach(mark => cell.element.classList.add(`${mark}-overlay`));
-                        }
-                    });
-
-                    (data.tokens || []).forEach(tokenData => {
-                        if (!tokenData.pos) tokenData.pos = { x: (tokenData.x || 0) * CELL_SIZE, y: (tokenData.y || 0) * CELL_SIZE };
-                        const token = { ...tokenData, selected: false };
-                        state.tokens.push(token);
-                        renderToken(token);
-                    });
-
-                    showStatusMessage('Game imported successfully');
-                } catch (e) {
-                    console.error('Failed to import data:', e);
-                    showStatusMessage('Failed to import game - invalid file');
-                }
-            };
-            reader.readAsText(file);
-        }
-
-        function clearGrid(confirmFirst = true) {
-            if (confirmFirst && !confirm('Clear the entire grid? This cannot be undone.')) return;
-
-            state.tokens = [];
-            state.selectedToken = null;
-            state.nextTokenId = 1;
-
-            state.cells.forEach(cell => {
-                cell.tokenId = null;
-                cell.marks = [];
-                cell.element.className = 'grid-cell';
-            });
-
-            const els = gridElement.querySelectorAll('.token');
-            els.forEach(el => el.remove());
-
-            selectedTokenInfoElement.textContent = 'No token selected';
-            updateTokenList();
-            showStatusMessage('Grid cleared');
-
-            if (!confirmFirst) saveState();
-        }
-
-        function findRandomEmptyPosition(size = 1) {
-            const emptyCells = state.cells.filter(cell => !cell.tokenId && isPositionValid(cell.x, cell.y, size));
-            if (emptyCells.length === 0) return null;
-            const randomCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
-            return { x: randomCell.x, y: randomCell.y };
-        }
-
-        function setupEventListeners() {
-            // sidebar toggle (mobile)
-            const sidebarToggle = document.getElementById('sidebarToggleBtn');
-            const sidebarEl = document.getElementById('sidebar');
-            if (sidebarToggle && sidebarEl) {
-                sidebarToggle.addEventListener('click', () => {
-                    sidebarEl.classList.toggle('sidebar-hidden');
-                    // recalc grid when panel visibility changes
-                    setTimeout(() => adjustForResize(), 60);
-                });
-            }
-
-            // mobile actions toggle
-            const actionsToggle = document.getElementById('actionsToggleBtn');
-            const mobileActionsPanel = document.getElementById('mobileActionsPanel');
-            if (actionsToggle && mobileActionsPanel) {
-                actionsToggle.addEventListener('click', () => {
-                    mobileActionsPanel.classList.toggle('visible');
-                });
-                // close when clicking outside
-                document.addEventListener('click', (ev) => {
-                    if (!mobileActionsPanel.contains(ev.target) && !actionsToggle.contains(ev.target)) {
-                        mobileActionsPanel.classList.remove('visible');
-                    }
-                });
-            }
-
-            // wire mobile action buttons to same behavior as desktop
-            document.getElementById('m_saveBtn').addEventListener('click', () => { saveState(); showStatusMessage('Game saved'); });
-            document.getElementById('m_exportBtn').addEventListener('click', exportState);
-            document.getElementById('m_importBtn').addEventListener('click', () => {
-                const fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.accept = '.json';
-                fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) importState(e.target.files[0]); });
-                fileInput.click();
-            });
-            document.getElementById('m_clearBtn').addEventListener('click', () => clearGrid());
-
-            document.getElementById('addPlayerBtn').addEventListener('click', () => {
-                const position = findRandomEmptyPosition();
-                if (position) {
-                    const token = createToken('player', position.x, position.y);
-                    selectToken(token);
-                    openTokenEditor(token);
-                } else showStatusMessage('No empty space for new token');
-            });
-
-            document.getElementById('addEnemyBtn').addEventListener('click', () => {
-                const position = findRandomEmptyPosition();
-                if (position) {
-                    const token = createToken('enemy', position.x, position.y);
-                    selectToken(token);
-                    openTokenEditor(token);
-                } else showStatusMessage('No empty space for new token');
-            });
-
-            document.getElementById('markFireBtn').addEventListener('click', () => { state.currentMarkType = state.currentMarkType === 'fire' ? null : 'fire'; updateMarkButtons(); });
-            document.getElementById('markSmokeBtn').addEventListener('click', () => { state.currentMarkType = state.currentMarkType === 'smoke' ? null : 'smoke'; updateMarkButtons(); });
-            document.getElementById('markIceBtn').addEventListener('click', () => { state.currentMarkType = state.currentMarkType === 'ice' ? null : 'ice'; updateMarkButtons(); });
-            document.getElementById('clearMarksBtn').addEventListener('click', () => {
-                state.currentMarkType = null;
-                updateMarkButtons();
-                state.cells.forEach(cell => { cell.marks = []; cell.element.classList.remove('fire-overlay','smoke-overlay','ice-overlay'); });
-                saveState();
-                showStatusMessage('Cleared all marks');
-            });
-
-            document.getElementById('saveBtn').addEventListener('click', () => { saveState(); showStatusMessage('Game saved'); });
-            document.getElementById('exportBtn').addEventListener('click', exportState);
-
-            document.getElementById('importBtn').addEventListener('click', () => {
-                const fileInput = document.createElement('input');
-                fileInput.type = 'file';
-                fileInput.accept = '.json';
-                fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) importState(e.target.files[0]); });
-                fileInput.click();
-            });
-
-            document.getElementById('clearBtn').addEventListener('click', () => clearGrid());
-
-            document.getElementById('moveUpBtn').addEventListener('click', () => {
-                if (state.selectedToken && isPositionValid(state.selectedToken.x, state.selectedToken.y - 1, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x, state.selectedToken.y - 1);
-            });
-            document.getElementById('moveLeftBtn').addEventListener('click', () => {
-                if (state.selectedToken && isPositionValid(state.selectedToken.x - 1, state.selectedToken.y, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x - 1, state.selectedToken.y);
-            });
-            document.getElementById('moveRightBtn').addEventListener('click', () => {
-                if (state.selectedToken && isPositionValid(state.selectedToken.x + 1, state.selectedToken.y, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x + 1, state.selectedToken.y);
-            });
-            document.getElementById('moveDownBtn').addEventListener('click', () => {
-                if (state.selectedToken && isPositionValid(state.selectedToken.x, state.selectedToken.y + 1, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x, state.selectedToken.y + 1);
-            });
-
-            document.getElementById('deleteTokenBtn').addEventListener('click', () => { if (state.selectedToken) deleteToken(state.selectedToken); });
-
-            document.getElementById('cancelTokenEditBtn').addEventListener('click', () => tokenModalElement.classList.add('hidden'));
-            document.getElementById('saveTokenBtn').addEventListener('click', saveTokenChanges);
-
-            // Map handlers
-            mapUrlInput.addEventListener('input', () => {
-                const url = mapUrlInput.value.trim();
-                if (url) {
-                    mapPreview.src = url;
-                    mapPreview.style.display = 'block';
-                } else {
-                    mapPreview.src = '';
-                    mapPreview.style.display = 'none';
-                }
-            });
-
-            mapFileInput.addEventListener('change', (e) => {
-                const file = e.target.files && e.target.files[0];
-                if (!file) return;
-                const reader = new FileReader();
-                reader.onload = function(ev) {
-                    const dataUrl = ev.target.result;
-                    mapUrlInput.value = '';
-                    applyMapBackground(dataUrl);
-                    saveMapToStorage(dataUrl);
-                    showStatusMessage('Mapa aplicado');
-                };
-                reader.readAsDataURL(file);
-            });
-
-            applyMapBtn.addEventListener('click', () => {
-                const url = mapUrlInput.value.trim();
-                if (!url) {
-                    showStatusMessage('Informe uma URL ou envie um arquivo');
-                    return;
-                }
-                applyMapBackground(url);
-                saveMapToStorage(url);
-                showStatusMessage('Mapa aplicado');
-            });
-
-            clearMapBtn.addEventListener('click', () => {
-                mapUrlInput.value = '';
-                mapFileInput.value = '';
-                applyMapBackground('');
-                saveMapToStorage(null);
-                showStatusMessage('Mapa removido');
-            });
-        }
-
-        function updateMarkButtons() {
-            const buttons = { fire: document.getElementById('markFireBtn'), smoke: document.getElementById('markSmokeBtn'), ice: document.getElementById('markIceBtn') };
-            Object.values(buttons).forEach(btn => btn.classList.remove('border-2','border-yellow-400'));
-            if (state.currentMarkType && buttons[state.currentMarkType]) buttons[state.currentMarkType].classList.add('border-2','border-yellow-400');
-        }
-
-        document.addEventListener('keydown', (e) => {
-            if (!state.selectedToken) return;
-            switch (e.key) {
-                case 'ArrowUp': document.getElementById('moveUpBtn').click(); e.preventDefault(); break;
-                case 'ArrowLeft': document.getElementById('moveLeftBtn').click(); e.preventDefault(); break;
-                case 'ArrowRight': document.getElementById('moveRightBtn').click(); e.preventDefault(); break;
-                case 'ArrowDown': document.getElementById('moveDownBtn').click(); e.preventDefault(); break;
-                case 'Delete': document.getElementById('deleteTokenBtn').click(); e.preventDefault(); break;
-            }
+        state.cells.forEach(cell => {
+            cell.tokenId = null;
+            cell.marks = [];
+            cell.element.className = 'grid-cell';
         });
 
-        function applyMapBackground(value) {
-            if (value) {
-                gridElement.style.backgroundImage = `url("${value}")`;
-                gridElement.style.backgroundSize = 'cover';
-                gridElement.style.backgroundPosition = 'center';
-                mapPreview.src = value;
+        const els = gridElement.querySelectorAll('.token');
+        els.forEach(el => el.remove());
+
+        selectedTokenInfoElement.textContent = 'No token selected';
+        updateTokenList();
+        showStatusMessage('Grid cleared');
+
+        if (!confirmFirst) saveState();
+    }
+
+    function findRandomEmptyPosition(size = 1) {
+        const emptyCells = state.cells.filter(cell => !cell.tokenId && isPositionValid(cell.x, cell.y, size));
+        if (emptyCells.length === 0) return null;
+        const randomCell = emptyCells[Math.floor(Math.random() * emptyCells.length)];
+        return { x: randomCell.x, y: randomCell.y };
+    }
+
+    function setupEventListeners() {
+        // sidebar toggle (mobile)
+        const sidebarToggle = document.getElementById('sidebarToggleBtn');
+        const sidebarEl = document.getElementById('sidebar');
+        if (sidebarToggle && sidebarEl) {
+            sidebarToggle.addEventListener('click', () => {
+                sidebarEl.classList.toggle('sidebar-hidden');
+                // recalc grid when panel visibility changes
+                setTimeout(() => adjustForResize(), 60);
+            });
+        }
+
+        // mobile actions toggle
+        const actionsToggle = document.getElementById('actionsToggleBtn');
+        const mobileActionsPanel = document.getElementById('mobileActionsPanel');
+        if (actionsToggle && mobileActionsPanel) {
+            // toggle com stopPropagation para evitar que o clique "suba" e feche o painel
+            function toggleMobilePanel(ev) {
+                ev && ev.stopPropagation && ev.stopPropagation();
+                mobileActionsPanel.classList.toggle('visible');
+            }
+            actionsToggle.addEventListener('click', toggleMobilePanel);
+            // pointer/touch para melhor responsividade em dispositivos móveis
+            actionsToggle.addEventListener('pointerdown', (ev) => { ev && ev.stopPropagation && ev.stopPropagation(); });
+            actionsToggle.addEventListener('touchstart', (ev) => { ev && ev.stopPropagation && ev.stopPropagation(); }, { passive: true });
+            // clicar dentro do painel não deve fechar
+            mobileActionsPanel.addEventListener('click', (ev) => ev && ev.stopPropagation && ev.stopPropagation());
+
+            // fechar quando clicar fora (só adiciona o listener se existirem os elementos)
+            document.addEventListener('click', (ev) => {
+                if (!mobileActionsPanel.contains(ev.target) && !actionsToggle.contains(ev.target)) {
+                    mobileActionsPanel.classList.remove('visible');
+                }
+            });
+        }
+
+        // wire mobile action buttons to same behavior as desktop
+        document.getElementById('m_saveBtn').addEventListener('click', () => { saveState(); showStatusMessage('Game saved'); });
+        document.getElementById('m_exportBtn').addEventListener('click', exportState);
+        document.getElementById('m_importBtn').addEventListener('click', () => {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.json';
+            fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) importState(e.target.files[0]); });
+            fileInput.click();
+        });
+        document.getElementById('m_clearBtn').addEventListener('click', () => clearGrid());
+
+        document.getElementById('addPlayerBtn').addEventListener('click', () => {
+            const position = findRandomEmptyPosition();
+            if (position) {
+                const token = createToken('player', position.x, position.y);
+                selectToken(token);
+                openTokenEditor(token);
+            } else showStatusMessage('No empty space for new token');
+        });
+
+        document.getElementById('addEnemyBtn').addEventListener('click', () => {
+            const position = findRandomEmptyPosition();
+            if (position) {
+                const token = createToken('enemy', position.x, position.y);
+                selectToken(token);
+                openTokenEditor(token);
+            } else showStatusMessage('No empty space for new token');
+        });
+
+        document.getElementById('markFireBtn').addEventListener('click', () => { state.currentMarkType = state.currentMarkType === 'fire' ? null : 'fire'; updateMarkButtons(); });
+        document.getElementById('markSmokeBtn').addEventListener('click', () => { state.currentMarkType = state.currentMarkType === 'smoke' ? null : 'smoke'; updateMarkButtons(); });
+        document.getElementById('markIceBtn').addEventListener('click', () => { state.currentMarkType = state.currentMarkType === 'ice' ? null : 'ice'; updateMarkButtons(); });
+        document.getElementById('clearMarksBtn').addEventListener('click', () => {
+            state.currentMarkType = null;
+            updateMarkButtons();
+            state.cells.forEach(cell => { cell.marks = []; cell.element.classList.remove('fire-overlay','smoke-overlay','ice-overlay'); });
+            saveState();
+            showStatusMessage('Cleared all marks');
+        });
+
+        document.getElementById('saveBtn').addEventListener('click', () => { saveState(); showStatusMessage('Game saved'); });
+        document.getElementById('exportBtn').addEventListener('click', exportState);
+
+        document.getElementById('importBtn').addEventListener('click', () => {
+            const fileInput = document.createElement('input');
+            fileInput.type = 'file';
+            fileInput.accept = '.json';
+            fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) importState(e.target.files[0]); });
+            fileInput.click();
+        });
+
+        document.getElementById('clearBtn').addEventListener('click', () => clearGrid());
+
+        document.getElementById('moveUpBtn').addEventListener('click', () => {
+            if (state.selectedToken && isPositionValid(state.selectedToken.x, state.selectedToken.y - 1, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x, state.selectedToken.y - 1);
+        });
+        document.getElementById('moveLeftBtn').addEventListener('click', () => {
+            if (state.selectedToken && isPositionValid(state.selectedToken.x - 1, state.selectedToken.y, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x - 1, state.selectedToken.y);
+        });
+        document.getElementById('moveRightBtn').addEventListener('click', () => {
+            if (state.selectedToken && isPositionValid(state.selectedToken.x + 1, state.selectedToken.y, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x + 1, state.selectedToken.y);
+        });
+        document.getElementById('moveDownBtn').addEventListener('click', () => {
+            if (state.selectedToken && isPositionValid(state.selectedToken.x, state.selectedToken.y + 1, state.selectedToken.size)) moveToken(state.selectedToken, state.selectedToken.x, state.selectedToken.y + 1);
+        });
+
+        document.getElementById('deleteTokenBtn').addEventListener('click', () => { if (state.selectedToken) deleteToken(state.selectedToken); });
+
+        document.getElementById('cancelTokenEditBtn').addEventListener('click', () => tokenModalElement.classList.add('hidden'));
+        document.getElementById('saveTokenBtn').addEventListener('click', saveTokenChanges);
+
+        // Map handlers
+        mapUrlInput.addEventListener('input', () => {
+            const url = mapUrlInput.value.trim();
+            if (url) {
+                mapPreview.src = url;
                 mapPreview.style.display = 'block';
             } else {
-                gridElement.style.backgroundImage = '';
                 mapPreview.src = '';
                 mapPreview.style.display = 'none';
             }
+        });
+
+        mapFileInput.addEventListener('change', (e) => {
+            const file = e.target.files && e.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(ev) {
+                const dataUrl = ev.target.result;
+                mapUrlInput.value = '';
+                applyMapBackground(dataUrl);
+                saveMapToStorage(dataUrl);
+                showStatusMessage('Mapa aplicado');
+            };
+            reader.readAsDataURL(file);
+        });
+
+        applyMapBtn.addEventListener('click', () => {
+            const url = mapUrlInput.value.trim();
+            if (!url) {
+                showStatusMessage('Informe uma URL ou envie um arquivo');
+                return;
+            }
+            applyMapBackground(url);
+            saveMapToStorage(url);
+            showStatusMessage('Mapa aplicado');
+        });
+
+        clearMapBtn.addEventListener('click', () => {
+            mapUrlInput.value = '';
+            mapFileInput.value = '';
+            applyMapBackground('');
+            saveMapToStorage(null);
+            showStatusMessage('Mapa removido');
+        });
+    }
+
+    function updateMarkButtons() {
+        const buttons = { fire: document.getElementById('markFireBtn'), smoke: document.getElementById('markSmokeBtn'), ice: document.getElementById('markIceBtn') };
+        Object.values(buttons).forEach(btn => btn.classList.remove('border-2','border-yellow-400'));
+        if (state.currentMarkType && buttons[state.currentMarkType]) buttons[state.currentMarkType].classList.add('border-2','border-yellow-400');
+    }
+
+    document.addEventListener('keydown', (e) => {
+        if (!state.selectedToken) return;
+        switch (e.key) {
+            case 'ArrowUp': document.getElementById('moveUpBtn').click(); e.preventDefault(); break;
+            case 'ArrowLeft': document.getElementById('moveLeftBtn').click(); e.preventDefault(); break;
+            case 'ArrowRight': document.getElementById('moveRightBtn').click(); e.preventDefault(); break;
+            case 'ArrowDown': document.getElementById('moveDownBtn').click(); e.preventDefault(); break;
+            case 'Delete': document.getElementById('deleteTokenBtn').click(); e.preventDefault(); break;
         }
-
-        function saveMapToStorage(value) {
-            if (value) localStorage.setItem('infernalBattleGrid_map', value);
-            else localStorage.removeItem('infernalBattleGrid_map');
-        }
-
-        function loadMapFromStorage() {
-            const stored = localStorage.getItem('infernalBattleGrid_map');
-            if (stored) applyMapBackground(stored);
-        }
-
-        function init() {
-            initializeGrid();
-            setupEventListeners();
-            loadMapFromStorage();
-            loadState();
-            adjustForResize();
-
-            document.getElementById('moveUpBtn').disabled = true;
-            document.getElementById('moveLeftBtn').disabled = true;
-            document.getElementById('moveRightBtn').disabled = true;
-            document.getElementById('moveDownBtn').disabled = true;
-            document.getElementById('deleteTokenBtn').disabled = true;
-        }
-
-        init();
     });
-    </script>
+
+    function applyMapBackground(value) {
+        if (value) {
+            gridElement.style.backgroundImage = `url("${value}")`;
+            gridElement.style.backgroundSize = 'cover';
+            gridElement.style.backgroundPosition = 'center';
+            mapPreview.src = value;
+            mapPreview.style.display = 'block';
+        } else {
+            gridElement.style.backgroundImage = '';
+            mapPreview.src = '';
+            mapPreview.style.display = 'none';
+        }
+    }
+
+    function saveMapToStorage(value) {
+        if (value) localStorage.setItem('infernalBattleGrid_map', value);
+        else localStorage.removeItem('infernalBattleGrid_map');
+    }
+
+    function loadMapFromStorage() {
+        const stored = localStorage.getItem('infernalBattleGrid_map');
+        if (stored) applyMapBackground(stored);
+    }
+
+    function init() {
+        initializeGrid();
+        setupEventListeners();
+        loadMapFromStorage();
+        loadState();
+        adjustForResize();
+
+        document.getElementById('moveUpBtn').disabled = true;
+        document.getElementById('moveLeftBtn').disabled = true;
+        document.getElementById('moveRightBtn').disabled = true;
+        document.getElementById('moveDownBtn').disabled = true;
+        document.getElementById('deleteTokenBtn').disabled = true;
+    }
+
+    init();
+});
+</script>
 </body>
 </html>
