@@ -20,13 +20,22 @@
         }
         @media (max-width: 640px) {
             :root { --cell-size: 30px; }
-            .logo-wrap { width: 48px; height: 48px; }
+            .logo-wrap { width: 44px; height: 44px; }
             .container { padding-left: 12px; padding-right: 12px; }
             header .flex { gap: 8px; }
             .w-max { width: 100%; } /* allow full-width behavior */
             .token-list-toggle { display: inline-flex; }
             /* hide token labels to save space on very small screens */
             .controls .text-label { display: none; }
+        }
+
+        /* header layout helpers */
+        header { align-items: center; gap: 12px; }
+        .title-wrap { display:flex; align-items:center; gap:12px; }
+        .app-title { font-size: 1.6rem; line-height:1; }
+        @media (max-width: 640px) {
+            .app-title { font-size: 1.15rem; }
+            header { padding-right: 8px; padding-left: 8px; }
         }
 
         .grid-cell {
@@ -57,9 +66,7 @@
             touch-action: none; /* evita scroll durante drag em touch */
         }
         .token:active { cursor: grabbing; }
-        .token.selected {
-            box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.8);
-        }
+        
        /* bordas por tipo */
        .token-border-player {
            box-shadow: 0 0 0 2px rgba(59,130,246,0.95); /* azul */
@@ -137,6 +144,10 @@
             position: relative; /* tokens positioned absolutely inside */
             display: grid;
             transform-origin: top left;
+            margin: 0 auto;
+            /* keep responsive: full width up to a max so it doesn't overflow */
+            width: auto;
+            max-width: calc(100vw - 20px);
         }
 
         .logo-wrap { width: 64px; height: 64px; border-radius: 9999px; overflow: hidden; display: inline-block; }
@@ -147,33 +158,102 @@
             .container { padding-left: 8px; padding-right: 8px; }
             .w-full.lg\:w-64 { display: none; } /* hide sidebar on very small if you prefer */
         }
+
+        /* class to hide sidebar when toggled on small screens */
+        .sidebar-hidden { display: none !important; }
+
+        /* header mobile action helpers */
+        .header-actions { display: flex; gap: 0.5rem; align-items:center; }
+        .mobile-actions-panel {
+            display: none;
+            position: fixed;
+            right: 12px;
+            top: 66px;
+            z-index: 60;
+            background: rgba(17,24,39,0.95);
+            border-radius: 8px;
+            padding: 8px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+        }
+        .mobile-actions-panel.visible { display: block; }
+
+        @media (max-width: 768px) {
+            /* hide header actions (save/export/etc) in header on small screens */
+            .header-actions { display: none; }
+            .mobile-actions-toggle { display: inline-flex; }
+            /* smaller background image to reduce visual clutter */
+            body::before { opacity: 0.06; }
+            /* ensure grid fits and centers on mobile */
+            #battleGrid { max-width: calc(100vw - 40px); }
+        }
+
+        /* keep footer controls compact on small screens */
+        @media (max-width: 540px) {
+            #tokenControls button { padding: 6px; }
+            .app-title { font-size: 1rem; }
+        }
     </style>
 </head>
 <body class="text-white">
     <div class="container mx-auto px-4 py-6">
         <!-- Header -->
         <header class="flex items-center justify-between mb-8">
-            <div class="flex items-center">
-                <div class="logo-wrap mr-4">
+            <div class="title-wrap flex items-center">
+                <div class="logo-wrap mr-3">
                     <img src="imagens/c398c7b4-3a28-4c4a-a825-0a14f752fe22.png" alt="Fire House">
                 </div>
-                <h1 class="text-3xl font-bold text-white">Fire House Grid Master</h1>
+                <div>
+                    <div class="app-title font-bold">Fire House</div>
+                    <div class="text-sm text-gray-300">Grid Master</div>
+                </div>
             </div>
-            <div class="flex space-x-4">
-                <button id="saveBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
-                    <i data-feather="save" class="mr-2"></i> <span class="text-label">Salvar</span>
+
+            <div class="flex items-center gap-3">
+                <!-- sidebar toggle (mobile only) -->
+                <button id="sidebarToggleBtn" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg lg:hidden mobile-actions-toggle" title="Mostrar/ocultar painel">
+                    <i data-feather="menu"></i>
                 </button>
-                <button id="exportBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
-                    <i data-feather="download" class="mr-2"></i> <span class="text-label">Exportar</span>
-                </button>
-                <button id="importBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
-                    <i data-feather="upload" class="mr-2"></i> <span class="text-label">Importar</span>
-                </button>
-                <button id="clearBtn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center">
-                    <i data-feather="trash-2" class="mr-2"></i> <span class="text-label">Excluir</span>
+
+                <!-- actions visible on desktop, hidden on mobile -->
+                <div class="header-actions">
+                    <button id="saveBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                        <i data-feather="save" class="mr-2"></i> <span class="text-label">Salvar</span>
+                    </button>
+                    <button id="exportBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                        <i data-feather="download" class="mr-2"></i> <span class="text-label">Exportar</span>
+                    </button>
+                    <button id="importBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                        <i data-feather="upload" class="mr-2"></i> <span class="text-label">Importar</span>
+                    </button>
+                    <button id="clearBtn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center">
+                        <i data-feather="trash-2" class="mr-2"></i> <span class="text-label">Excluir</span>
+                    </button>
+                </div>
+
+                <!-- mobile actions toggle (visible on small screens) -->
+                <button id="actionsToggleBtn" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg lg:hidden mobile-actions-toggle" title="Ações">
+                    <i data-feather="more-vertical"></i>
                 </button>
             </div>
         </header>
+
+        <!-- mobile actions floating panel -->
+        <div id="mobileActionsPanel" class="mobile-actions-panel hidden">
+            <div class="flex flex-col gap-2">
+                <button id="m_saveBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                    <i data-feather="save" class="mr-2"></i> Salvar
+                </button>
+                <button id="m_exportBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                    <i data-feather="download" class="mr-2"></i> Exportar
+                </button>
+                <button id="m_importBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
+                    <i data-feather="upload" class="mr-2"></i> Importar
+                </button>
+                <button id="m_clearBtn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center">
+                    <i data-feather="trash-2" class="mr-2"></i> Excluir
+                </button>
+            </div>
+        </div>
 
         <!-- Main Content -->
         <div class="flex flex-col lg:flex-row gap-6">
@@ -230,7 +310,7 @@
 
         <!-- Footer -->
         <footer class="mt-8 bg-gray-900 rounded-lg p-4">
-            <div class="flex justify-between items-center">
+            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                 <div id="selectedTokenInfo" class="text-lg">No token selected</div>
                 <div id="statusMessage" class="text-yellow-400 italic">Ready for battle!</div>
                 <div class="flex space-x-2" id="tokenControls">
@@ -314,10 +394,11 @@
         function computeCellSizeForContainer() {
             const base = getCssBaseCellSize();
             const wrapper = gridElement.parentElement; // flex-1
-            const availableWidth = Math.max(200, wrapper.clientWidth - 16); // leave small margin
+            // When sidebar hidden on mobile, wrapper.clientWidth increases; use it
+            const availableWidth = Math.max(160, wrapper.clientWidth - 24); // leave small margin
             const sizedByWidth = Math.floor(availableWidth / state.gridSize);
             // keep within reasonable bounds (min 18, max base)
-            const finalSize = Math.max(18, Math.min(base, sizedByWidth || base));
+            const finalSize = Math.max(14, Math.min(base, sizedByWidth || base));
             // update CSS var so CSS-driven layout (grid-cell, token sizes) follow
             document.documentElement.style.setProperty('--cell-size', `${finalSize}px`);
             document.documentElement.style.setProperty('--token-size', `calc(var(--cell-size) - var(--token-gap))`);
@@ -857,6 +938,44 @@
         }
 
         function setupEventListeners() {
+            // sidebar toggle (mobile)
+            const sidebarToggle = document.getElementById('sidebarToggleBtn');
+            const sidebarEl = document.getElementById('sidebar');
+            if (sidebarToggle && sidebarEl) {
+                sidebarToggle.addEventListener('click', () => {
+                    sidebarEl.classList.toggle('sidebar-hidden');
+                    // recalc grid when panel visibility changes
+                    setTimeout(() => adjustForResize(), 60);
+                });
+            }
+
+            // mobile actions toggle
+            const actionsToggle = document.getElementById('actionsToggleBtn');
+            const mobileActionsPanel = document.getElementById('mobileActionsPanel');
+            if (actionsToggle && mobileActionsPanel) {
+                actionsToggle.addEventListener('click', () => {
+                    mobileActionsPanel.classList.toggle('visible');
+                });
+                // close when clicking outside
+                document.addEventListener('click', (ev) => {
+                    if (!mobileActionsPanel.contains(ev.target) && !actionsToggle.contains(ev.target)) {
+                        mobileActionsPanel.classList.remove('visible');
+                    }
+                });
+            }
+
+            // wire mobile action buttons to same behavior as desktop
+            document.getElementById('m_saveBtn').addEventListener('click', () => { saveState(); showStatusMessage('Game saved'); });
+            document.getElementById('m_exportBtn').addEventListener('click', exportState);
+            document.getElementById('m_importBtn').addEventListener('click', () => {
+                const fileInput = document.createElement('input');
+                fileInput.type = 'file';
+                fileInput.accept = '.json';
+                fileInput.addEventListener('change', (e) => { if (e.target.files.length > 0) importState(e.target.files[0]); });
+                fileInput.click();
+            });
+            document.getElementById('m_clearBtn').addEventListener('click', () => clearGrid());
+
             document.getElementById('addPlayerBtn').addEventListener('click', () => {
                 const position = findRandomEmptyPosition();
                 if (position) {
