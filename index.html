@@ -8,9 +8,25 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/feather-icons"></script>
     <style>
+        :root {
+            --cell-size: 40px; /* default desktop */
+            --token-gap: 4px;
+            --token-size: calc(var(--cell-size) - var(--token-gap));
+        }
+
+        /* mobile tweaks */
+        @media (max-width: 640px) {
+            :root { --cell-size: 30px; }
+            .logo-wrap { width: 48px; height: 48px; }
+            .container { padding-left: 12px; padding-right: 12px; }
+            header .flex { gap: 8px; }
+            .w-max { width: 100%; } /* allow full-width behavior */
+            .token-list-toggle { display: inline-flex; }
+        }
+
         .grid-cell {
-            width: 40px;
-            height: 40px;
+            width: var(--cell-size);
+            height: var(--cell-size);
             border: none; /* esconder linhas do grid */
             position: relative;
             box-sizing: border-box;
@@ -21,8 +37,8 @@
 
         /* single token rule (includes image handling) */
         .token {
-            width: 36px;
-            height: 36px;
+            width: var(--token-size);
+            height: var(--token-size);
             border-radius: 50%;
             cursor: grab;
             display: flex;
@@ -33,6 +49,7 @@
             font-size: 0.8rem;
             user-select: none;
             overflow: hidden;
+            touch-action: none; /* evita scroll durante drag em touch */
         }
         .token:active { cursor: grabbing; }
         .token.selected {
@@ -78,17 +95,18 @@
             100% { opacity: 0.8; }
         }
 
-        /* grid size (15x15 helper classes kept for Tailwind-like semantics) */
-        .grid-cols-15 { grid-template-columns: repeat(15, 40px); }
-        .grid-rows-15 { grid-template-rows: repeat(15, 40px); }
+        /* grid helpers */
+        .grid-cols-15 { grid-template-columns: repeat(15, var(--cell-size)); }
+        .grid-rows-15 { grid-template-rows: repeat(15, var(--cell-size)); }
 
         body {
            position: relative;
            min-height: 100vh;
            color: white;
-           background-color: #0b1220; /* fallback escuro por baixo da imagem */
+           background-color: #0b1220; /* fallback */
            overflow-x: hidden;
         }
+
     /* imagem full-screen semi-transparente atrás do conteúdo */
     body::before {
         content: "";
@@ -98,7 +116,7 @@
         background-size: cover;
         background-position: center;
         background-repeat: no-repeat;
-        opacity: 0.18; /* ajuste aqui a transparência (0.05 - 0.35) */
+        opacity: 0.18; /* ajuste */
         z-index: -1;
         pointer-events: none;
         filter: saturate(0.95) contrast(0.9);
@@ -115,8 +133,15 @@
             display: grid;
             /* width/height set inline by JS to match gridSize */
         }
+
         .logo-wrap { width: 64px; height: 64px; border-radius: 9999px; overflow: hidden; display: inline-block; }
         .logo-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+        /* small helper to hide side panel on very small screens if desired */
+        @media (max-width: 420px) {
+            .container { padding-left: 8px; padding-right: 8px; }
+            .w-full.lg\:w-64 { display: none; } /* hide sidebar on very small if you prefer */
+        }
     </style>
 </head>
 <body class="text-white">
@@ -127,9 +152,7 @@
                 <div class="logo-wrap mr-4">
                     <img src="imagens/c398c7b4-3a28-4c4a-a825-0a14f752fe22.png" alt="Fire House">
                 </div>
-               <h1 class="text-3xl font-bold text-white">
-                    Fire House Grid Master
-                </h1>
+                <h1 class="text-3xl font-bold text-white">Fire House Grid Master</h1>
             </div>
             <div class="flex space-x-4">
                 <button id="saveBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
@@ -195,9 +218,8 @@
             </div>
 
             <!-- Grid Area -->
-            <div class="flex-1">
-                <div id="battleGrid" class="grid grid-cols-15 gap-0 border-0 border-red-800 mx-auto w-max">
-                </div>
+            <div class="flex-1 overflow-auto">
+                <div id="battleGrid" class="grid grid-cols-15 gap-0 border-0 border-red-800 mx-auto w-max"></div>
             </div>
         </div>
 
@@ -278,7 +300,12 @@
     document.addEventListener('DOMContentLoaded', function() {
         feather.replace();
 
-        const CELL_SIZE = 40;
+        function getCellSize() {
+            const v = getComputedStyle(document.documentElement).getPropertyValue('--cell-size') || '40px';
+            return parseInt(v, 10) || 40;
+        }
+        let CELL_SIZE = getCellSize();
+
         const state = {
             gridSize: 15,
             cells: [],
@@ -309,8 +336,8 @@
         function initializeGrid() {
             gridElement.innerHTML = '';
             state.cells = [];
+            CELL_SIZE = getCellSize();
             gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, ${CELL_SIZE}px)`;
-            // set explicit size so tokens can't escape
             gridElement.style.width = `${state.gridSize * CELL_SIZE}px`;
             gridElement.style.height = `${state.gridSize * CELL_SIZE}px`;
 
@@ -322,7 +349,6 @@
                     cell.dataset.y = y;
 
                     cell.addEventListener('click', handleCellClick);
-                    // drag/drop older handlers left for compatibility but tokens use pointer drag now
                     cell.addEventListener('dragover', handleDragOver);
                     cell.addEventListener('drop', handleDrop);
 
@@ -337,6 +363,29 @@
                 }
             }
         }
+
+        function adjustForResize() {
+            CELL_SIZE = getCellSize();
+            gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, ${CELL_SIZE}px)`;
+            gridElement.style.width = `${state.gridSize * CELL_SIZE}px`;
+            gridElement.style.height = `${state.gridSize * CELL_SIZE}px`;
+
+            // reposition tokens based on token.x/token.y
+            state.tokens.forEach(token => {
+                if (!token.pos) token.pos = { x: (token.x || 0) * CELL_SIZE, y: (token.y || 0) * CELL_SIZE };
+                token.pos.x = (token.x || Math.round((token.pos?.x||0)/CELL_SIZE)) * CELL_SIZE;
+                token.pos.y = (token.y || Math.round((token.pos?.y||0)/CELL_SIZE)) * CELL_SIZE;
+                const el = document.getElementById(token.id);
+                if (el) {
+                    el.style.width = `${CELL_SIZE - 4}px`;
+                    el.style.height = `${CELL_SIZE - 4}px`;
+                    el.style.left = `${token.pos.x}px`;
+                    el.style.top = `${token.pos.y}px`;
+                }
+            });
+        }
+
+        window.addEventListener('resize', () => adjustForResize());
 
         function handleCellClick(e) {
             const cell = e.currentTarget;
@@ -358,11 +407,10 @@
         }
 
         function handleDragOver(e) { e.preventDefault(); }
-        function handleDrop(e) { e.preventDefault(); /* kept for compatibility */ }
+        function handleDrop(e) { e.preventDefault(); }
 
         function isPositionValid(x, y, size = 1) {
             if (x < 0 || y < 0 || x + size > state.gridSize || y + size > state.gridSize) return false;
-            // with free movement we don't block by tokenId
             return true;
         }
 
@@ -416,10 +464,11 @@
                 tokenElement.textContent = token.name.charAt(0);
             }
 
-            // free positioning
+            CELL_SIZE = getCellSize();
             tokenElement.style.position = 'absolute';
             tokenElement.style.width = `${CELL_SIZE - 4}px`;
             tokenElement.style.height = `${CELL_SIZE - 4}px`;
+
             if (!token.pos) token.pos = { x: token.x * CELL_SIZE, y: token.y * CELL_SIZE };
             tokenElement.style.left = `${token.pos.x}px`;
             tokenElement.style.top = `${token.pos.y}px`;
@@ -436,7 +485,7 @@
                     origTop: parseFloat(tokenElement.style.top || 0),
                     pointerId: ev.pointerId
                 };
-                tokenElement.setPointerCapture(ev.pointerId);
+                try { tokenElement.setPointerCapture(ev.pointerId); } catch (e) {}
                 tokenElement.style.zIndex = ++zIndexCounter;
             });
 
@@ -463,9 +512,7 @@
 
         document.addEventListener('pointerup', (ev) => {
             if (!dragging) return;
-            // release pointer capture if held
             try { dragging.el.releasePointerCapture && dragging.el.releasePointerCapture(dragging.pointerId); } catch (e) {}
-            // save final position
             const left = parseFloat(dragging.el.style.left || 0);
             const top = parseFloat(dragging.el.style.top || 0);
             dragging.token.pos = { x: left, y: top };
@@ -765,7 +812,6 @@
                 cell.element.className = 'grid-cell';
             });
 
-            // remove token elements
             const els = gridElement.querySelectorAll('.token');
             els.forEach(el => el.remove());
 
@@ -907,7 +953,6 @@
             }
         });
 
-        // Map helper functions
         function applyMapBackground(value) {
             if (value) {
                 gridElement.style.backgroundImage = `url("${value}")`;
@@ -937,6 +982,7 @@
             setupEventListeners();
             loadMapFromStorage();
             loadState();
+            adjustForResize();
 
             document.getElementById('moveUpBtn').disabled = true;
             document.getElementById('moveLeftBtn').disabled = true;
