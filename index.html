@@ -15,6 +15,9 @@
         }
 
         /* mobile tweaks */
+        @media (max-width: 1024px) {
+            :root { --cell-size: 34px; }
+        }
         @media (max-width: 640px) {
             :root { --cell-size: 30px; }
             .logo-wrap { width: 48px; height: 48px; }
@@ -22,6 +25,8 @@
             header .flex { gap: 8px; }
             .w-max { width: 100%; } /* allow full-width behavior */
             .token-list-toggle { display: inline-flex; }
+            /* hide token labels to save space on very small screens */
+            .controls .text-label { display: none; }
         }
 
         .grid-cell {
@@ -131,7 +136,7 @@
             box-shadow: 0 2px 16px rgba(0,0,0,0.3);
             position: relative; /* tokens positioned absolutely inside */
             display: grid;
-            /* width/height set inline by JS to match gridSize */
+            transform-origin: top left;
         }
 
         .logo-wrap { width: 64px; height: 64px; border-radius: 9999px; overflow: hidden; display: inline-block; }
@@ -156,16 +161,16 @@
             </div>
             <div class="flex space-x-4">
                 <button id="saveBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
-                    <i data-feather="save" class="mr-2"></i> Salvar
+                    <i data-feather="save" class="mr-2"></i> <span class="text-label">Salvar</span>
                 </button>
                 <button id="exportBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
-                    <i data-feather="download" class="mr-2"></i> Exportar
+                    <i data-feather="download" class="mr-2"></i> <span class="text-label">Exportar</span>
                 </button>
                 <button id="importBtn" class="px-4 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center">
-                    <i data-feather="upload" class="mr-2"></i> Importar
+                    <i data-feather="upload" class="mr-2"></i> <span class="text-label">Importar</span>
                 </button>
                 <button id="clearBtn" class="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center">
-                    <i data-feather="trash-2" class="mr-2"></i> Excluir
+                    <i data-feather="trash-2" class="mr-2"></i> <span class="text-label">Excluir</span>
                 </button>
             </div>
         </header>
@@ -173,27 +178,27 @@
         <!-- Main Content -->
         <div class="flex flex-col lg:flex-row gap-6">
             <!-- Side Panel -->
-            <div class="w-full lg:w-64 bg-gray-900 rounded-lg p-4">
+            <div id="sidebar" class="w-full lg:w-64 bg-gray-900 rounded-lg p-4">
                 <h2 class="text-xl font-bold mb-4 text-red-400">Controls</h2>
 
-                <div class="grid grid-cols-2 gap-2 mb-6">
+                <div class="grid grid-cols-2 gap-2 mb-6 controls">
                     <button id="addPlayerBtn" class="px-3 py-2 bg-blue-800 hover:bg-blue-700 rounded-lg flex items-center justify-center">
-                        <i data-feather="user-plus" class="mr-2"></i> Player
+                        <i data-feather="user-plus" class="mr-2"></i> <span class="text-label">Player</span>
                     </button>
                     <button id="addEnemyBtn" class="px-3 py-2 bg-red-800 hover:bg-red-700 rounded-lg flex items-center justify-center">
-                        <i data-feather="skull" class="mr-2"></i> Criatura
+                        <i data-feather="skull" class="mr-2"></i> <span class="text-label">Criatura</span>
                     </button>
                     <button id="markFireBtn" class="px-3 py-2 bg-orange-800 hover:bg-orange-700 rounded-lg flex items-center justify-center">
-                        <i data-feather="flame" class="mr-2"></i> Fogo
+                        <i data-feather="flame" class="mr-2"></i> <span class="text-label">Fogo</span>
                     </button>
                     <button id="markSmokeBtn" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center">
-                        <i data-feather="cloud" class="mr-2"></i> Fumaça
+                        <i data-feather="cloud" class="mr-2"></i> <span class="text-label">Fumaça</span>
                     </button>
                     <button id="markIceBtn" class="px-3 py-2 bg-blue-800 hover:bg-blue-700 rounded-lg flex items-center justify-center">
-                        <i data-feather="droplet" class="mr-2"></i> Cura
+                        <i data-feather="droplet" class="mr-2"></i> <span class="text-label">Cura</span>
                     </button>
                     <button id="clearMarksBtn" class="px-3 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg flex items-center justify-center">
-                        <i data-feather="x" class="mr-2"></i> Limpar Marcas
+                        <i data-feather="x" class="mr-2"></i> <span class="text-label">Limpar Marcas</span>
                     </button>
                 </div>
 
@@ -300,11 +305,26 @@
     document.addEventListener('DOMContentLoaded', function() {
         feather.replace();
 
-        function getCellSize() {
+        function getCssBaseCellSize() {
             const v = getComputedStyle(document.documentElement).getPropertyValue('--cell-size') || '40px';
             return parseInt(v, 10) || 40;
         }
-        let CELL_SIZE = getCellSize();
+
+        // compute an appropriate cell size so the whole grid fits its parent width on small screens
+        function computeCellSizeForContainer() {
+            const base = getCssBaseCellSize();
+            const wrapper = gridElement.parentElement; // flex-1
+            const availableWidth = Math.max(200, wrapper.clientWidth - 16); // leave small margin
+            const sizedByWidth = Math.floor(availableWidth / state.gridSize);
+            // keep within reasonable bounds (min 18, max base)
+            const finalSize = Math.max(18, Math.min(base, sizedByWidth || base));
+            // update CSS var so CSS-driven layout (grid-cell, token sizes) follow
+            document.documentElement.style.setProperty('--cell-size', `${finalSize}px`);
+            document.documentElement.style.setProperty('--token-size', `calc(var(--cell-size) - var(--token-gap))`);
+            return finalSize;
+        }
+
+        let CELL_SIZE = getCssBaseCellSize();
 
         const state = {
             gridSize: 15,
@@ -332,11 +352,14 @@
 
         let dragging = null;
         let zIndexCounter = 10;
+        let resizeTimer = null;
 
         function initializeGrid() {
             gridElement.innerHTML = '';
             state.cells = [];
-            CELL_SIZE = getCellSize();
+
+            CELL_SIZE = computeCellSizeForContainer();
+            // set grid template using the computed CSS var (keeps CSS consistent)
             gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, ${CELL_SIZE}px)`;
             gridElement.style.width = `${state.gridSize * CELL_SIZE}px`;
             gridElement.style.height = `${state.gridSize * CELL_SIZE}px`;
@@ -365,24 +388,28 @@
         }
 
         function adjustForResize() {
-            CELL_SIZE = getCellSize();
-            gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, ${CELL_SIZE}px)`;
-            gridElement.style.width = `${state.gridSize * CELL_SIZE}px`;
-            gridElement.style.height = `${state.gridSize * CELL_SIZE}px`;
+            // debounce resize to avoid layout thrash on mobile
+            if (resizeTimer) clearTimeout(resizeTimer);
+            resizeTimer = setTimeout(() => {
+                CELL_SIZE = computeCellSizeForContainer();
+                gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, ${CELL_SIZE}px)`;
+                gridElement.style.width = `${state.gridSize * CELL_SIZE}px`;
+                gridElement.style.height = `${state.gridSize * CELL_SIZE}px`;
 
-            // reposition tokens based on token.x/token.y
-            state.tokens.forEach(token => {
-                if (!token.pos) token.pos = { x: (token.x || 0) * CELL_SIZE, y: (token.y || 0) * CELL_SIZE };
-                token.pos.x = (token.x || Math.round((token.pos?.x||0)/CELL_SIZE)) * CELL_SIZE;
-                token.pos.y = (token.y || Math.round((token.pos?.y||0)/CELL_SIZE)) * CELL_SIZE;
-                const el = document.getElementById(token.id);
-                if (el) {
-                    el.style.width = `${CELL_SIZE - 4}px`;
-                    el.style.height = `${CELL_SIZE - 4}px`;
-                    el.style.left = `${token.pos.x}px`;
-                    el.style.top = `${token.pos.y}px`;
-                }
-            });
+                // reposition tokens based on token.x/token.y (use grid coords)
+                state.tokens.forEach(token => {
+                    if (!token.pos) token.pos = { x: (token.x || 0) * CELL_SIZE, y: (token.y || 0) * CELL_SIZE };
+                    token.pos.x = (token.x !== undefined ? token.x : Math.round((token.pos?.x||0)/CELL_SIZE)) * CELL_SIZE;
+                    token.pos.y = (token.y !== undefined ? token.y : Math.round((token.pos?.y||0)/CELL_SIZE)) * CELL_SIZE;
+                    const el = document.getElementById(token.id);
+                    if (el) {
+                        el.style.width = `${CELL_SIZE - 4}px`;
+                        el.style.height = `${CELL_SIZE - 4}px`;
+                        el.style.left = `${token.pos.x}px`;
+                        el.style.top = `${token.pos.y}px`;
+                    }
+                });
+            }, 80);
         }
 
         window.addEventListener('resize', () => adjustForResize());
@@ -464,7 +491,7 @@
                 tokenElement.textContent = token.name.charAt(0);
             }
 
-            CELL_SIZE = getCellSize();
+            CELL_SIZE = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || CELL_SIZE;
             tokenElement.style.position = 'absolute';
             tokenElement.style.width = `${CELL_SIZE - 4}px`;
             tokenElement.style.height = `${CELL_SIZE - 4}px`;
