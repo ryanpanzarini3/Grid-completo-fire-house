@@ -11,11 +11,12 @@
         .grid-cell {
             width: 40px;
             height: 40px;
-            border: 1px solid #2d3748;
+            border: none; /* esconder linhas do grid */
             position: relative;
+            box-sizing: border-box;
         }
         .grid-cell:hover {
-            background-color: rgba(239, 68, 68, 0.2);
+            background-color: transparent;
         }
 
         /* single token rule (includes image handling) */
@@ -23,10 +24,7 @@
             width: 36px;
             height: 36px;
             border-radius: 50%;
-            position: absolute;
-            top: 2px;
-            left: 2px;
-            cursor: move;
+            cursor: grab;
             display: flex;
             align-items: center;
             justify-content: center;
@@ -36,7 +34,8 @@
             user-select: none;
             overflow: hidden;
         }
-       .token.selected {
+        .token:active { cursor: grabbing; }
+        .token.selected {
             box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.8);
         }
        /* bordas por tipo */
@@ -79,13 +78,9 @@
             100% { opacity: 0.8; }
         }
 
-        /* grid size (15x15) */
-        .grid-cols-15 {
-            grid-template-columns: repeat(15, 40px);
-        }
-        .grid-rows-15 {
-            grid-template-rows: repeat(15, 40px);
-        }
+        /* grid size (15x15 helper classes kept for Tailwind-like semantics) */
+        .grid-cols-15 { grid-template-columns: repeat(15, 40px); }
+        .grid-rows-15 { grid-template-rows: repeat(15, 40px); }
 
         body {
            position: relative;
@@ -93,7 +88,7 @@
            color: white;
            background-color: #0b1220; /* fallback escuro por baixo da imagem */
            overflow-x: hidden;
-     }
+        }
     /* imagem full-screen semi-transparente atrás do conteúdo */
     body::before {
         content: "";
@@ -109,15 +104,16 @@
         filter: saturate(0.95) contrast(0.9);
     }
 
-        /* battle grid background (map) - image can be set inline by JS */
+        /* battle grid background (map) */
         #battleGrid {
             background-size: cover;
             background-position: center;
-            background-color: rgba(30,30,30,0.6);
-            background-blend-mode: overlay;
+            background-color: rgba(30,30,30,0.0); /* transparente para mostrar mapa sem overlay */
             border-radius: 12px;
             box-shadow: 0 2px 16px rgba(0,0,0,0.3);
+            position: relative; /* tokens positioned absolutely inside */
             display: grid;
+            /* width/height set inline by JS to match gridSize */
         }
         .logo-wrap { width: 64px; height: 64px; border-radius: 9999px; overflow: hidden; display: inline-block; }
         .logo-wrap img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -181,7 +177,7 @@
                 <!-- Map controls (front-end upload / URL) -->
                 <div class="mt-4 p-3 bg-gray-800 rounded-lg">
                     <h4 class="text-sm font-semibold mb-2 text-red-400">Mapa (fundo)</h4>
-                    <input id="mapUrlInput" type="text" placeholder="Escolha o arquivo" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm mb-2">
+                    <input id="mapUrlInput" type="text" placeholder="Escolha o arquivo ou URL" class="w-full bg-gray-700 border border-gray-600 rounded px-2 py-1 text-sm mb-2">
                     <input id="mapFileInput" type="file" accept="image/*" class="w-full text-sm text-gray-300 mb-2">
                     <div class="flex items-center justify-between">
                         <div class="flex items-center space-x-2">
@@ -200,7 +196,7 @@
 
             <!-- Grid Area -->
             <div class="flex-1">
-                <div id="battleGrid" class="grid grid-cols-15 gap-0 border-2 border-red-800 mx-auto w-max">
+                <div id="battleGrid" class="grid grid-cols-15 gap-0 border-0 border-red-800 mx-auto w-max">
                 </div>
             </div>
         </div>
@@ -282,6 +278,7 @@
     document.addEventListener('DOMContentLoaded', function() {
         feather.replace();
 
+        const CELL_SIZE = 40;
         const state = {
             gridSize: 15,
             cells: [],
@@ -306,10 +303,16 @@
         const clearMapBtn = document.getElementById('clearMapBtn');
         const mapPreview = document.getElementById('mapPreview');
 
+        let dragging = null;
+        let zIndexCounter = 10;
+
         function initializeGrid() {
             gridElement.innerHTML = '';
             state.cells = [];
-            gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, 40px)`;
+            gridElement.style.gridTemplateColumns = `repeat(${state.gridSize}, ${CELL_SIZE}px)`;
+            // set explicit size so tokens can't escape
+            gridElement.style.width = `${state.gridSize * CELL_SIZE}px`;
+            gridElement.style.height = `${state.gridSize * CELL_SIZE}px`;
 
             for (let y = 0; y < state.gridSize; y++) {
                 for (let x = 0; x < state.gridSize; x++) {
@@ -319,6 +322,7 @@
                     cell.dataset.y = y;
 
                     cell.addEventListener('click', handleCellClick);
+                    // drag/drop older handlers left for compatibility but tokens use pointer drag now
                     cell.addEventListener('dragover', handleDragOver);
                     cell.addEventListener('drop', handleDrop);
 
@@ -354,29 +358,11 @@
         }
 
         function handleDragOver(e) { e.preventDefault(); }
-
-        function handleDrop(e) {
-            e.preventDefault();
-            const cell = e.currentTarget;
-            const x = parseInt(cell.dataset.x);
-            const y = parseInt(cell.dataset.y);
-
-            const tokenId = e.dataTransfer.getData('text/plain');
-            const token = state.tokens.find(t => t.id === tokenId);
-
-            if (token && isPositionValid(x, y, token.size)) {
-                moveToken(token, x, y);
-            }
-        }
+        function handleDrop(e) { e.preventDefault(); /* kept for compatibility */ }
 
         function isPositionValid(x, y, size = 1) {
             if (x < 0 || y < 0 || x + size > state.gridSize || y + size > state.gridSize) return false;
-            for (let dy = 0; dy < size; dy++) {
-                for (let dx = 0; dx < size; dx++) {
-                    const cell = getCellData(x + dx, y + dy);
-                    if (!cell || cell.tokenId) return false;
-                }
-            }
+            // with free movement we don't block by tokenId
             return true;
         }
 
@@ -395,6 +381,7 @@
                 type: type,
                 x: x,
                 y: y,
+                pos: { x: x * CELL_SIZE, y: y * CELL_SIZE },
                 size: 1,
                 hp: type === 'player' ? 30 : 15,
                 maxHp: type === 'player' ? 30 : 15,
@@ -404,14 +391,6 @@
             };
 
             state.tokens.push(token);
-
-            for (let dy = 0; dy < token.size; dy++) {
-                for (let dx = 0; dx < token.size; dx++) {
-                    const cell = getCellData(token.x + dx, token.y + dy);
-                    if (cell) cell.tokenId = token.id;
-                }
-            }
-
             renderToken(token);
             saveState();
             return token;
@@ -424,7 +403,6 @@
             const tokenElement = document.createElement('div');
             tokenElement.id = token.id;
             tokenElement.className = `token ${token.color} ${token.selected ? 'selected' : ''}`;
-            // borda por tipo (player = azul, enemy/criatura = vermelho)
             if (token.type === 'player') tokenElement.classList.add('token-border-player');
             else if (token.type === 'enemy') tokenElement.classList.add('token-border-enemy');
             tokenElement.title = `${token.name}\nHP: ${token.hp}/${token.maxHp}`;
@@ -438,40 +416,69 @@
                 tokenElement.textContent = token.name.charAt(0);
             }
 
-            tokenElement.draggable = true;
-            tokenElement.addEventListener('dragstart', handleTokenDragStart);
-            tokenElement.addEventListener('click', () => selectToken(token));
+            // free positioning
+            tokenElement.style.position = 'absolute';
+            tokenElement.style.width = `${CELL_SIZE - 4}px`;
+            tokenElement.style.height = `${CELL_SIZE - 4}px`;
+            if (!token.pos) token.pos = { x: token.x * CELL_SIZE, y: token.y * CELL_SIZE };
+            tokenElement.style.left = `${token.pos.x}px`;
+            tokenElement.style.top = `${token.pos.y}px`;
+            tokenElement.style.zIndex = ++zIndexCounter;
 
-            const cell = getCellData(token.x, token.y);
-            if (cell && cell.element) {
-                cell.element.appendChild(tokenElement);
-            }
+            tokenElement.addEventListener('pointerdown', (ev) => {
+                ev.preventDefault();
+                dragging = {
+                    token,
+                    el: tokenElement,
+                    startX: ev.clientX,
+                    startY: ev.clientY,
+                    origLeft: parseFloat(tokenElement.style.left || 0),
+                    origTop: parseFloat(tokenElement.style.top || 0),
+                    pointerId: ev.pointerId
+                };
+                tokenElement.setPointerCapture(ev.pointerId);
+                tokenElement.style.zIndex = ++zIndexCounter;
+            });
 
+            tokenElement.addEventListener('click', (ev) => { ev.stopPropagation(); selectToken(token); });
+
+            gridElement.appendChild(tokenElement);
             updateTokenList();
         }
 
-        function handleTokenDragStart(e) {
-            e.dataTransfer.setData('text/plain', e.target.id);
-        }
+        // global pointer handlers for dragging
+        document.addEventListener('pointermove', (ev) => {
+            if (!dragging) return;
+            const dx = ev.clientX - dragging.startX;
+            const dy = ev.clientY - dragging.startY;
+            let nx = dragging.origLeft + dx;
+            let ny = dragging.origTop + dy;
+            const maxX = gridElement.clientWidth - (CELL_SIZE - 4);
+            const maxY = gridElement.clientHeight - (CELL_SIZE - 4);
+            nx = Math.max(0, Math.min(nx, maxX));
+            ny = Math.max(0, Math.min(ny, maxY));
+            dragging.el.style.left = `${nx}px`;
+            dragging.el.style.top = `${ny}px`;
+        });
+
+        document.addEventListener('pointerup', (ev) => {
+            if (!dragging) return;
+            // release pointer capture if held
+            try { dragging.el.releasePointerCapture && dragging.el.releasePointerCapture(dragging.pointerId); } catch (e) {}
+            // save final position
+            const left = parseFloat(dragging.el.style.left || 0);
+            const top = parseFloat(dragging.el.style.top || 0);
+            dragging.token.pos = { x: left, y: top };
+            dragging.token.x = Math.round(left / CELL_SIZE);
+            dragging.token.y = Math.round(top / CELL_SIZE);
+            saveState();
+            dragging = null;
+        });
 
         function moveToken(token, newX, newY) {
-            for (let dy = 0; dy < token.size; dy++) {
-                for (let dx = 0; dx < token.size; dx++) {
-                    const oldCell = getCellData(token.x + dx, token.y + dy);
-                    if (oldCell) oldCell.tokenId = null;
-                }
-            }
-
             token.x = newX;
             token.y = newY;
-
-            for (let dy = 0; dy < token.size; dy++) {
-                for (let dx = 0; dx < token.size; dx++) {
-                    const newCell = getCellData(token.x + dx, token.y + dy);
-                    if (newCell) newCell.tokenId = token.id;
-                }
-            }
-
+            token.pos = { x: token.x * CELL_SIZE, y: token.y * CELL_SIZE };
             renderToken(token);
             saveState();
             showStatusMessage(`Moved ${token.name} to ${String.fromCharCode(65 + newX)}${newY + 1}`);
@@ -541,7 +548,6 @@
                 }
             }
 
-            // populate image fields / preview
             tokenImageUrlInput.value = token.image && !token.image.startsWith('data:') ? token.image : '';
             if (token.image) {
                 tokenImagePreview.src = token.image;
@@ -559,7 +565,6 @@
             tokenModalElement.classList.remove('hidden');
         }
 
-        // token image handlers
         tokenImageFileInput.addEventListener('change', (e) => {
             const file = e.target.files && e.target.files[0];
             if (!file) return;
@@ -629,13 +634,6 @@
         function deleteToken(token) {
             if (!confirm(`Delete ${token.name}?`)) return;
 
-            for (let dy = 0; dy < token.size; dy++) {
-                for (let dx = 0; dx < token.size; dx++) {
-                    const cell = getCellData(token.x + dx, token.y + dy);
-                    if (cell) cell.tokenId = null;
-                }
-            }
-
             state.tokens = state.tokens.filter(t => t.id !== token.id);
 
             const tokenElement = document.getElementById(token.id);
@@ -693,16 +691,9 @@
                 });
 
                 (data.tokens || []).forEach(tokenData => {
+                    if (!tokenData.pos) tokenData.pos = { x: (tokenData.x || 0) * CELL_SIZE, y: (tokenData.y || 0) * CELL_SIZE };
                     const token = { ...tokenData, selected: false };
                     state.tokens.push(token);
-
-                    for (let dy = 0; dy < token.size; dy++) {
-                        for (let dx = 0; dx < token.size; dx++) {
-                            const cell = getCellData(token.x + dx, token.y + dy);
-                            if (cell) cell.tokenId = token.id;
-                        }
-                    }
-
                     renderToken(token);
                 });
 
@@ -746,14 +737,9 @@
                     });
 
                     (data.tokens || []).forEach(tokenData => {
+                        if (!tokenData.pos) tokenData.pos = { x: (tokenData.x || 0) * CELL_SIZE, y: (tokenData.y || 0) * CELL_SIZE };
                         const token = { ...tokenData, selected: false };
                         state.tokens.push(token);
-                        for (let dy = 0; dy < token.size; dy++) {
-                            for (let dx = 0; dx < token.size; dx++) {
-                                const cell = getCellData(token.x + dx, token.y + dy);
-                                if (cell) cell.tokenId = token.id;
-                            }
-                        }
                         renderToken(token);
                     });
 
@@ -778,6 +764,10 @@
                 cell.marks = [];
                 cell.element.className = 'grid-cell';
             });
+
+            // remove token elements
+            const els = gridElement.querySelectorAll('.token');
+            els.forEach(el => el.remove());
 
             selectedTokenInfoElement.textContent = 'No token selected';
             updateTokenList();
