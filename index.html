@@ -8,7 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/feather-icons"></script>
     <style>
-        :root {
+       :root {
             --cell-size: 40px; /* default desktop */
             --token-gap: 4px;
             --token-size: calc(var(--cell-size) - var(--token-gap));
@@ -120,19 +120,13 @@
         }
 
     /* imagem full-screen semi-transparente atrás do conteúdo */
-    body::before {
-        content: "";
-        position: fixed;
-        inset: 0;
-        background-image: url('imagens/c398c7b4-3a28-4c4a-a825-0a14f752fe22.png');
-        background-size: cover;
-        background-position: center;
-        background-repeat: no-repeat;
-        opacity: 0.18; /* ajuste */
-        z-index: -1;
-        pointer-events: none;
-        filter: saturate(0.95) contrast(0.9);
-    }
+    body {
+           position: relative;
+           min-height: 100vh;
+           color: white;
+           background-color: #0b1220; /* fallback */
+           overflow-x: hidden;
+        }
 
         /* battle grid background (map) */
         #battleGrid {
@@ -192,9 +186,26 @@
             #tokenControls button { padding: 6px; }
             .app-title { font-size: 1rem; }
         }
+         #bgVideo {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        z-index: -1;
+        opacity: 0.18; /* ajuste de visibilidade igual ao anterior */
+        pointer-events: none;
+        filter: saturate(0.95) contrast(0.9);
+    }
     </style>
 </head>
 <body class="text-white">
+    <!-- vídeo de fundo: substitua imagens/background.mp4 pelo nome do seu ficheiro -->
+    <video id="bgVideo" autoplay muted loop playsinline poster="imagens/c398c7b4-3a28-4c4a-a825-0a14f752fe22.png">
+        <source src="imagens/BACKGROUND.mp4" type="video/mp4">
+        <!-- fallback: se o browser não suportar vídeo, o poster (imagem) será mostrado -->
+    </video>
+
     <div class="container mx-auto px-4 py-6">
         <!-- Header -->
         <header class="flex items-center justify-between mb-8">
@@ -202,11 +213,6 @@
                 <div class="logo-wrap mr-3">
                     <img src="imagens/c398c7b4-3a28-4c4a-a825-0a14f752fe22.png" alt="Fire House">
                 </div>
-                <div>
-                    <div class="app-title font-bold">Fire House Club</div>
-                    <div class="text-sm text-gray-300">Grid Master</div>
-                </div>
-            </div>
 
             <div class="flex items-center gap-3">
                 <!-- sidebar toggle (mobile only) -->
