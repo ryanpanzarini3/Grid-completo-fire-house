@@ -51,20 +51,20 @@
 
         /* single token rule (includes image handling) */
         .token {
-            width: var(--token-size);
-            height: var(--token-size);
-            border-radius: 50%;
-            cursor: grab;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: white;
-            font-weight: bold;
-            font-size: 0.8rem;
-            user-select: none;
-            overflow: hidden;
-            touch-action: none; /* evita scroll durante drag em touch */
-        }
+    width: var(--token-size);
+    height: var(--token-size);
+    /* border-radius: 50%; <--- REMOVA OU COMENTE ESTA LINHA */
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 0.8rem;
+    user-select: none;
+    overflow: hidden; /* Mantenha overflow: hidden para cortar a imagem se for maior que o token */
+    touch-action: none;
+}
         .token:active { cursor: grabbing; }
         
        /* bordas por tipo */
@@ -74,13 +74,13 @@
        .token-border-enemy {
            box-shadow: 0 0 0 2px rgba(220,38,38,0.95); /* vermelho */
        }
-        .token img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-            border-radius: 50%;
-        }
+       .token img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain; /* Use 'contain' para manter a proporção e não cortar, ou 'cover' se quiser preencher e cortar */
+    display: block;
+    /* border-radius: 50%; <--- REMOVA OU COMENTE ESTA LINHA */
+}
 
         .fire-overlay { background-color: rgba(239, 68, 68, 0.3); }
         .smoke-overlay { background-color: rgba(156, 163, 175, 0.3); }
@@ -197,6 +197,7 @@
         pointer-events: none;
         filter: saturate(0.95) contrast(0.9);
     }
+        
     </style>
 </head>
 <body class="text-white">
@@ -588,20 +589,21 @@ document.addEventListener('DOMContentLoaded', function() {
         tokenElement.style.zIndex = ++zIndexCounter;
 
         tokenElement.addEventListener('pointerdown', (ev) => {
-            ev.preventDefault();
-            dragging = {
-                token,
-                el: tokenElement,
-                startX: ev.clientX,
-                startY: ev.clientY,
-                origLeft: parseFloat(tokenElement.style.left || 0),
-                origTop: parseFloat(tokenElement.style.top || 0),
-                pointerId: ev.pointerId
-            };
-            try { tokenElement.setPointerCapture(ev.pointerId); } catch (e) {}
-            tokenElement.style.zIndex = ++zIndexCounter;
-        });
-
+    ev.preventDefault();
+    dragging = {
+        token,
+        el: tokenElement,
+        startX: ev.clientX,
+        startY: ev.clientY,
+        origLeft: parseFloat(tokenElement.style.left || 0),
+        origTop: parseFloat(tokenElement.style.top || 0),
+        pointerId: ev.pointerId,
+        gridOffsetX: gridElement.getBoundingClientRect().left,  // ADICIONE ISTO
+        gridOffsetY: gridElement.getBoundingClientRect().top     // ADICIONE ISTO
+    };
+    try { tokenElement.setPointerCapture(ev.pointerId); } catch (e) {}
+    tokenElement.style.zIndex = ++zIndexCounter;
+});
         tokenElement.addEventListener('click', (ev) => { ev.stopPropagation(); selectToken(token); });
 
         gridElement.appendChild(tokenElement);
@@ -610,31 +612,58 @@ document.addEventListener('DOMContentLoaded', function() {
 
     // global pointer handlers for dragging
     document.addEventListener('pointermove', (ev) => {
-        if (!dragging) return;
-        const dx = ev.clientX - dragging.startX;
-        const dy = ev.clientY - dragging.startY;
-        let nx = dragging.origLeft + dx;
-        let ny = dragging.origTop + dy;
-        const maxX = gridElement.clientWidth - (CELL_SIZE - 4);
-        const maxY = gridElement.clientHeight - (CELL_SIZE - 4);
-        nx = Math.max(0, Math.min(nx, maxX));
-        ny = Math.max(0, Math.min(ny, maxY));
-        dragging.el.style.left = `${nx}px`;
-        dragging.el.style.top = `${ny}px`;
-    });
-
-    document.addEventListener('pointerup', (ev) => {
-        if (!dragging) return;
-        try { dragging.el.releasePointerCapture && dragging.el.releasePointerCapture(dragging.pointerId); } catch (e) {}
-        const left = parseFloat(dragging.el.style.left || 0);
-        const top = parseFloat(dragging.el.style.top || 0);
-        dragging.token.pos = { x: left, y: top };
-        dragging.token.x = Math.round(left / CELL_SIZE);
-        dragging.token.y = Math.round(top / CELL_SIZE);
+    if (!dragging) return;
+    
+    // Calcular posição relativa ao grid (não à viewport)
+    const gridRect = gridElement.getBoundingClientRect();
+    const posX = ev.clientX - gridRect.left;
+    const posY = ev.clientY - gridRect.top;
+    
+    // Snap to grid (múltiplo de CELL_SIZE)
+    let nx = Math.round(posX / CELL_SIZE) * CELL_SIZE;
+    let ny = Math.round(posY / CELL_SIZE) * CELL_SIZE;
+    
+    // Limitar aos limites do grid
+    const maxX = gridElement.clientWidth - CELL_SIZE;
+    const maxY = gridElement.clientHeight - CELL_SIZE;
+    nx = Math.max(0, Math.min(nx, maxX));
+    ny = Math.max(0, Math.min(ny, maxY));
+    
+    dragging.el.style.left = `${nx}px`;
+    dragging.el.style.top = `${ny}px`;
+});
+   document.addEventListener('pointerup', (ev) => {
+    if (!dragging) return;
+    try { dragging.el.releasePointerCapture && dragging.el.releasePointerCapture(dragging.pointerId); } catch (e) {}
+    
+    // Obter a posição final em pixels
+    const left = parseFloat(dragging.el.style.left || 0);
+    const top = parseFloat(dragging.el.style.top || 0);
+    
+    // Converter para coordenadas de grid e sincronizar
+    const gridX = Math.round(left / CELL_SIZE);
+    const gridY = Math.round(top / CELL_SIZE);
+    
+    // Validar posição
+    if (isPositionValid(gridX, gridY, dragging.token.size)) {
+        dragging.token.x = gridX;
+        dragging.token.y = gridY;
+        dragging.token.pos = { x: gridX * CELL_SIZE, y: gridY * CELL_SIZE };
+        
+        // Atualizar elemento para posição exata do grid
+        dragging.el.style.left = `${dragging.token.pos.x}px`;
+        dragging.el.style.top = `${dragging.token.pos.y}px`;
+        
         saveState();
-        dragging = null;
-    });
-
+        showStatusMessage(`${dragging.token.name} moved to ${String.fromCharCode(65 + gridX)}${gridY + 1}`);
+    } else {
+        // Se posição inválida, voltar para a posição anterior
+        dragging.el.style.left = `${dragging.token.pos.x}px`;
+        dragging.el.style.top = `${dragging.token.pos.y}px`;
+    }
+    
+    dragging = null;
+});
     function moveToken(token, newX, newY) {
         token.x = newX;
         token.y = newY;
