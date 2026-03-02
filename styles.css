@@ -1,0 +1,81 @@
+/* styles.css: token and hp bar styling moved from index.html */
+.token {
+    width: var(--token-size);
+    height: var(--token-size);
+    border-radius: 50%;
+    cursor: grab;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 0.8rem;
+    user-select: none;
+    overflow: visible; /* precisa ser visível para mostrar label fora do token */
+    touch-action: none;
+    position: relative; /* permite que a barra de vida seja posicionada fora do token */
+}
+
+/* ajuste rápido: limitar imagem ao contêiner para não vazar */
+.token img { object-fit: contain; /* já definido, garante que não extrapole */ }
+
+/* garantir imagem também com borda circular */
+.token img { border-radius: 50%; }
+
+.token:active { cursor: grabbing; }
+
+/* hp container estilo simples: texto sobre fundo cinza escuro */
+.token .hp-container {
+    position: absolute;
+    bottom: -44px; /* embaixo dos players */
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 8px;
+    background: #666;
+    border: 2px solid #333;
+    border-radius: 20px;
+    font-family: 'Georgia', serif;
+    font-size: 0.75rem;
+    color: #fff; /* texto branco para contraste */
+    pointer-events: none;
+    z-index: 100;
+    min-width: 40px;
+}
+/* ocultar ícones e barra para deixar apenas o número */
+
+/* barra de vida minimalista reduzida decorativa sob pill */
+.token .hp-bar {
+    width: calc(var(--token-size) + 8px);
+    height: 4px;
+    background: #441;
+    border: 1px solid #bb6;
+    border-radius: 2px;
+    box-shadow: 0 0 2px rgba(0,0,0,0.4) inset;
+    position: relative;
+    overflow: hidden;
+    margin-top: 2px;
+}
+.token .hp-bar .hp-fill {
+    height: 100%;
+    background: linear-gradient(to right, #d00, #f55);
+    transition: width 0.2s;
+    border-radius: 1px 0 0 1px;
+}
+
+/* texto de vida dentro do container (sem fundo branco) */
+.token .hp-label {
+    font-size: 0.8rem;
+    font-weight: 700;
+    font-family: 'Georgia', serif;
+    padding: 0; /* remover fundo padding já no container */
+    background: transparent;
+    color: #fff; /* branco para contraste no fundo cinza */
+    border: none;
+    white-space: nowrap;
+    text-shadow: none;
+    pointer-events: none;
+    margin-bottom: 0;
+}
