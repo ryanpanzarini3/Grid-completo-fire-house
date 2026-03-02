@@ -7,6 +7,8 @@
     <link rel="icon" type="image/x-icon" href="/static/favicon.ico">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/feather-icons"></script>
+    <link rel="stylesheet" href="styles.css">
+    <script src="script.js"></script>
     <style>
        :root {
             --cell-size: 40px; /* default desktop */
@@ -66,7 +68,7 @@
     touch-action: none;
 }
         .token:active { cursor: grabbing; }
-        
+
        /* bordas por tipo */
        .token-border-player {
            box-shadow: 0 0 0 2px rgba(59,130,246,0.95); /* azul */
@@ -139,6 +141,7 @@
             display: grid;
             transform-origin: top left;
             margin: 0 auto;
+            overflow: visible; /* permite que a vida apareça fora do grid */
             /* keep responsive: full width up to a max so it doesn't overflow */
             width: auto;
             max-width: calc(100vw - 20px);
@@ -310,8 +313,8 @@
             </div>
 
             <!-- Grid Area -->
-            <div class="flex-1 overflow-auto">
-                <div id="battleGrid" class="grid grid-cols-15 gap-0 border-0 border-red-800 mx-auto w-max"></div>
+            <div class="flex-1" style="overflow: visible !important; padding-bottom: 80px !important; padding-top: 20px !important;">
+                <div id="battleGrid" class="grid grid-cols-15 gap-0 border-0 border-red-800 mx-auto w-max" style="overflow: visible !important; position: relative !important;"></div>
             </div>
         </div>
 
@@ -565,6 +568,8 @@ document.addEventListener('DOMContentLoaded', function() {
         const tokenElement = document.createElement('div');
         tokenElement.id = token.id;
         tokenElement.className = `token ${token.color} ${token.selected ? 'selected' : ''}`;
+        tokenElement.style.overflow = 'visible';
+        tokenElement.style.position = 'relative';
         if (token.type === 'player') tokenElement.classList.add('token-border-player');
         else if (token.type === 'enemy') tokenElement.classList.add('token-border-enemy');
         tokenElement.title = `${token.name}\nHP: ${token.hp}/${token.maxHp}`;
@@ -573,9 +578,27 @@ document.addEventListener('DOMContentLoaded', function() {
             const img = document.createElement('img');
             img.src = token.image;
             img.alt = token.name;
+            img.style.position = 'absolute';
+            img.style.top = '0';
+            img.style.left = '0';
+            img.style.width = '100%';
+            img.style.height = '100%';
             tokenElement.appendChild(img);
         } else {
-            tokenElement.textContent = token.name.charAt(0);
+            const textSpan = document.createElement('span');
+            textSpan.textContent = token.name.charAt(0);
+            textSpan.style.position = 'relative';
+            textSpan.style.zIndex = '1';
+            tokenElement.appendChild(textSpan);
+        }
+
+        // adição do container de vida (barra + label) - apenas para PLAYERS
+        if (token.type === 'player') {
+            const hpContainer = document.createElement('div');
+            hpContainer.className = 'hp-container';
+            hpContainer.style.cssText = 'position: absolute !important; bottom: -35px !important; left: 50% !important; transform: translateX(-50%) !important; display: block !important; padding: 3px 6px !important; background: #666 !important; border: 2px solid #333 !important; border-radius: 15px !important; color: #fff !important; z-index: 9999 !important; min-width: 35px !important; font-size: 0.7rem !important; font-weight: 700 !important; white-space: nowrap !important; text-align: center !important;';
+            hpContainer.textContent = `${token.hp}/${token.maxHp}`;
+            tokenElement.appendChild(hpContainer);
         }
 
         CELL_SIZE = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-size')) || CELL_SIZE;
@@ -607,6 +630,8 @@ document.addEventListener('DOMContentLoaded', function() {
         tokenElement.addEventListener('click', (ev) => { ev.stopPropagation(); selectToken(token); });
 
         gridElement.appendChild(tokenElement);
+        // re-run feather to convert newly added icons
+        try { feather.replace(); } catch(e) {}
         updateTokenList();
     }
 
@@ -616,19 +641,16 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Calcular posição relativa ao grid (não à viewport)
     const gridRect = gridElement.getBoundingClientRect();
-    const posX = ev.clientX - gridRect.left;
-    const posY = ev.clientY - gridRect.top;
+    let nx = ev.clientX - gridRect.left - (dragging.el.offsetWidth/2);
+    let ny = ev.clientY - gridRect.top - (dragging.el.offsetHeight/2);
     
-    // Snap to grid (múltiplo de CELL_SIZE)
-    let nx = Math.round(posX / CELL_SIZE) * CELL_SIZE;
-    let ny = Math.round(posY / CELL_SIZE) * CELL_SIZE;
-    
-    // Limitar aos limites do grid
-    const maxX = gridElement.clientWidth - CELL_SIZE;
-    const maxY = gridElement.clientHeight - CELL_SIZE;
+    // Limitar aos limites do grid (manter o token totalmente dentro)
+    const maxX = gridElement.clientWidth - dragging.el.offsetWidth;
+    const maxY = gridElement.clientHeight - dragging.el.offsetHeight;
     nx = Math.max(0, Math.min(nx, maxX));
     ny = Math.max(0, Math.min(ny, maxY));
     
+    // Aplicar posição livre (sem snap)
     dragging.el.style.left = `${nx}px`;
     dragging.el.style.top = `${ny}px`;
 });
@@ -636,32 +658,22 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!dragging) return;
     try { dragging.el.releasePointerCapture && dragging.el.releasePointerCapture(dragging.pointerId); } catch (e) {}
     
-    // Obter a posição final em pixels
+    // posição final em pixels dentro do grid
     const left = parseFloat(dragging.el.style.left || 0);
     const top = parseFloat(dragging.el.style.top || 0);
-    
-    // Converter para coordenadas de grid e sincronizar
-    const gridX = Math.round(left / CELL_SIZE);
-    const gridY = Math.round(top / CELL_SIZE);
-    
-    // Validar posição
-    if (isPositionValid(gridX, gridY, dragging.token.size)) {
-        dragging.token.x = gridX;
-        dragging.token.y = gridY;
-        dragging.token.pos = { x: gridX * CELL_SIZE, y: gridY * CELL_SIZE };
-        
-        // Atualizar elemento para posição exata do grid
-        dragging.el.style.left = `${dragging.token.pos.x}px`;
-        dragging.el.style.top = `${dragging.token.pos.y}px`;
-        
-        saveState();
-        showStatusMessage(`${dragging.token.name} moved to ${String.fromCharCode(65 + gridX)}${gridY + 1}`);
-    } else {
-        // Se posição inválida, voltar para a posição anterior
-        dragging.el.style.left = `${dragging.token.pos.x}px`;
-        dragging.el.style.top = `${dragging.token.pos.y}px`;
-    }
-    
+
+    // armazenar sem snap (posições livres)
+    dragging.token.pos = { x: left, y: top };
+    // opcional: atualizar grid coords para referência (float)
+    dragging.token.x = left / CELL_SIZE;
+    dragging.token.y = top / CELL_SIZE;
+
+    saveState();
+    // mostrar coordenada aproximada usando arredondamento para letra/número
+    const approxX = Math.round(left / CELL_SIZE);
+    const approxY = Math.round(top / CELL_SIZE);
+    showStatusMessage(`${dragging.token.name} moved to approx ${String.fromCharCode(65 + approxX)}${approxY + 1}`);
+
     dragging = null;
 });
     function moveToken(token, newX, newY) {
@@ -702,7 +714,15 @@ document.addEventListener('DOMContentLoaded', function() {
             tokenElement.innerHTML = `
                 <div class="flex items-center">
                     <div class="w-6 h-6 rounded-full ${token.color} mr-2 flex items-center justify-center text-xs font-bold">${token.name.charAt(0)}</div>
-                    <span>${token.name}</span>
+                    <div>
+                        <span class="font-semibold">${token.name}</span>
+                        <div class="flex items-center space-x-1 text-xs mt-1">
+                            <span>HP:</span>
+                            <input type="number" class="token-hp-input w-10 bg-gray-800 border border-gray-700 rounded px-1 py-0 text-sm" value="${token.hp}" min="0" max="${token.maxHp}">
+                            <span>/</span>
+                            <input type="number" class="token-maxhp-input w-10 bg-gray-800 border border-gray-700 rounded px-1 py-0 text-sm" value="${token.maxHp}" min="1">
+                        </div>
+                    </div>
                 </div>
                 <div class="flex space-x-2">
                     <button class="edit-token-btn p-1 rounded hover:bg-gray-700" data-id="${token.id}">
@@ -715,6 +735,36 @@ document.addEventListener('DOMContentLoaded', function() {
             `;
 
             tokenListElement.appendChild(tokenElement);
+
+            // add listeners for HP edits
+            const hpInput = tokenElement.querySelector('.token-hp-input');
+            const maxHpInput = tokenElement.querySelector('.token-maxhp-input');
+            hpInput.addEventListener('change', () => {
+                let val = parseInt(hpInput.value)||0;
+                if (val < 0) val = 0;
+                if (val > token.maxHp) val = token.maxHp;
+                token.hp = val;
+                hpInput.value = val;
+                if (state.selectedToken && state.selectedToken.id === token.id) {
+                    selectedTokenInfoElement.textContent = `${token.name} (${token.hp}/${token.maxHp} HP)`;
+                }
+                renderToken(token);
+                saveState();
+            });
+            maxHpInput.addEventListener('change', () => {
+                let val = parseInt(maxHpInput.value)||1;
+                if (val < 1) val = 1;
+                token.maxHp = val;
+                if (token.hp > val) token.hp = val;
+                hpInput.max = val;
+                hpInput.value = token.hp;
+                maxHpInput.value = val;
+                if (state.selectedToken && state.selectedToken.id === token.id) {
+                    selectedTokenInfoElement.textContent = `${token.name} (${token.hp}/${token.maxHp} HP)`;
+                }
+                renderToken(token);
+                saveState();
+            });
 
             tokenElement.querySelector('.edit-token-btn').addEventListener('click', () => openTokenEditor(token));
             tokenElement.querySelector('.delete-token-btn').addEventListener('click', () => deleteToken(token));
@@ -1183,6 +1233,7 @@ document.addEventListener('DOMContentLoaded', function() {
     init();
 });
 </script>
+
 </body>
 </html>
 
